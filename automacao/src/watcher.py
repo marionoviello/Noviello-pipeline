@@ -73,6 +73,8 @@ def main() -> int:
     cfg = load_config()
     setup_logging(cfg.logs_dir)
     logger = get_logger("watcher")
+    from src.heartbeat import bater
+    bater(cfg.state_dir, "watcher")
 
     if not cfg.google_pronto():
         logger.info("watcher", status="aguardando_setup_google")

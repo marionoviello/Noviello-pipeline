@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Health — Noviello Pipeline</title>
+<style>
+  body { font-family: 'Inter', system-ui, sans-serif; max-width: 900px; margin: 24px auto; padding: 0 20px; color: #281019; background: #FAF7F5; }
+  h1 { font-family: Georgia, serif; color: #68192E; border-bottom: 2px solid #D4AF37; padding-bottom: 8px; }
+  h2 { font-size: 16px; text-transform: uppercase; letter-spacing: 1.5px; color: #68192E; margin-top: 28px; }
+  .status-geral { display: inline-block; padding: 6px 14px; border-radius: 999px; font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; }
+  .ok { background: #4A7B5C; color: #fff; }
+  .nok { background: #68192E; color: #fff; }
+  .warn { background: #D4AF37; color: #281019; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 14px; background: #fff; }
+  th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #F1F3F2; }
+  th { background: #68192E; color: #fff; font-weight: 600; }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+  .pill-ok { background: #E6F4EA; color: #1F6B3A; }
+  .pill-atrasado { background: #FFF3E0; color: #8B5A00; }
+  .pill-parado { background: #FFE4E1; color: #A52A2A; }
+  .pill-nunca { background: #F1F3F2; color: #5A4650; }
+  code { background: #F1F3F2; padding: 1px 6px; border-radius: 3px; font-size: 12px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .card { background: #fff; padding: 16px 20px; border-radius: 4px; border-left: 3px solid #D4AF37; }
+  .num { font-size: 28px; font-weight: 700; color: #68192E; }
+</style>
+</head>
+<body>
+  <h1>Health — Noviello Pipeline</h1>
+  <p>
+    <span class="status-geral {{ 'ok' if snapshot.ok else 'nok' }}">
+      {{ 'SAUDÁVEL' if snapshot.ok else 'DEGRADADO' }}
+    </span>
+    &nbsp;·&nbsp;
+    <a href="/health.json">JSON</a> &nbsp;·&nbsp;
+    <a href="/">painel</a>
+  </p>
+
+  <h2>Componentes</h2>
+  <table>
+    <thead><tr><th>Componente</th><th>Status</th><th>Última atividade</th><th>Idade</th></tr></thead>
+    <tbody>
+    {% for nome, c in snapshot.componentes.items() %}
+      <tr>
+        <td><b>{{ nome }}</b></td>
+        <td><span class="pill pill-{{ c.status if c.status != 'nunca_rodou' else 'nunca' }}">{{ c.status.replace('_', ' ') }}</span></td>
+        <td><code>{{ c.ultimo_iso or '—' }}</code></td>
+        <td>{% if c.idade_segundos %}{{ '%d s'|format(c.idade_segundos) if c.idade_segundos < 60 else ('%d min'|format(c.idade_segundos / 60) if c.idade_segundos < 3600 else '%d h'|format(c.idade_segundos / 3600)) }}{% else %}—{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Filas e estados</h2>
+  <div class="grid">
+    <div class="card"><div class="num">{{ snapshot.pecas.producao_aguardando_revisao }}</div><div>copy aguardando revisão</div></div>
+    <div class="card"><div class="num">{{ snapshot.pecas.pecas_aguardando_aprovacao }}</div><div>peças aguardando aprovação</div></div>
+    <div class="card"><div class="num">{{ snapshot.pecas.pecas_publicando }}</div><div>peças publicando agora</div></div>
+    <div class="card"><div class="num" style="color:#A52A2A">{{ snapshot.pecas.producao_em_erro + snapshot.pecas.pecas_em_erro }}</div><div>em erro (revisar)</div></div>
+  </div>
+
+  <h2>Circuit breaker</h2>
+  <table>
+    <thead><tr><th>Canal</th><th>Estado</th><th>Falhas consecutivas</th><th>Última falha</th></tr></thead>
+    <tbody>
+    {% for canal, c in snapshot.circuit.items() %}
+      <tr>
+        <td><b>{{ canal }}</b></td>
+        <td>{% if c.pausado %}<span class="pill pill-parado">pausado</span>{% else %}<span class="pill pill-ok">ativo</span>{% endif %}</td>
+        <td>{{ c.falhas_consecutivas }}</td>
+        <td><code>{{ c.ultima_falha_iso or '—' }}</code></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Cadência</h2>
+  <table>
+    <tr><td>.env ativa</td><td><span class="pill pill-{{ 'ok' if snapshot.cadencia.ativa_env else 'parado' }}">{{ 'sim' if snapshot.cadencia.ativa_env else 'desativada' }}</span></td></tr>
+    <tr><td>Painel ativa</td><td><span class="pill pill-{{ 'ok' if snapshot.cadencia.ativa_painel else 'atrasado' }}">{{ 'sim' if snapshot.cadencia.ativa_painel else 'pausada' }}</span></td></tr>
+    <tr><td>Último run</td><td><code>{{ snapshot.cadencia.ultimo_run or '—' }}</code></td></tr>
+    <tr><td>Total promovidos</td><td>{{ snapshot.cadencia.total_promovidos }}</td></tr>
+  </table>
+</body>
+</html>

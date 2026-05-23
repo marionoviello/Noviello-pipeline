@@ -361,6 +361,8 @@ def main() -> int:
     cfg = load_config()
     setup_logging(cfg.logs_dir)
     logger = get_logger("producer")
+    from src.heartbeat import bater
+    bater(cfg.state_dir, "producer")
 
     if not cfg.google_pronto():
         logger.info("producer", status="aguardando_setup_google")

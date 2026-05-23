@@ -20,9 +20,11 @@ from __future__ import annotations
 
 import time
 
+from src.alertas import alertar
 from src.cadencia_state import CadenciaState
 from src.calendar_client import CalendarClient
 from src.config import load_config
+from src.gmail_client import GmailClient
 from src.logger import get_logger, log_stage, setup_logging
 from src.wp_client import WordPressClient
 from src.wp_source import CategoriaNaoEncontrada, WordPressSource
@@ -55,6 +57,8 @@ def main() -> int:
     cfg = load_config()
     setup_logging(cfg.logs_dir)
     logger = get_logger("cadencia")
+    from src.heartbeat import bater
+    bater(cfg.state_dir, "cadencia")
 
     # kill switch .env (mais alto na hierarquia)
     if not cfg.cadencia_ativa:
@@ -119,6 +123,22 @@ def main() -> int:
                 evento_pendente=evento.get("summary", ""),
                 evento_em=evento.get("start_iso", ""),
             )
+            # Alerta Mario via email (throttled 1h)
+            try:
+                gmail = GmailClient(cfg.google)
+                alertar(
+                    cfg, gmail, "cadencia_backlog_vazio", "default",
+                    titulo=f"Backlog editorial vazio — evento WP em {evento.get('start_iso', '')[:10]}",
+                    corpo=(
+                        f"A cadência detectou evento '{evento.get('summary', '')}' "
+                        f"em {evento.get('start_iso', '')} mas a categoria "
+                        f"'{cfg.wp_categoria_backlog}' está vazia.\n\n"
+                        f"Adicione rascunhos ao backlog ou ajuste a cadência no painel."
+                    ),
+                    gravidade="alto", logger=logger,
+                )
+            except Exception as exc:  # noqa: BLE001
+                log_stage(logger, "-", "cadencia", "alerta_falhou", erro=str(exc))
             break  # sem nada pra promover, para
 
         artigo = backlog[0]

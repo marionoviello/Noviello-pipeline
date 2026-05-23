@@ -59,6 +59,8 @@ def main() -> int:
     cfg = load_config()
     setup_logging(cfg.logs_dir)
     logger = get_logger("poller")
+    from src.heartbeat import bater
+    bater(cfg.state_dir, "poller")
 
     if not cfg.google_pronto():
         logger.info("poller", status="aguardando_setup_google")

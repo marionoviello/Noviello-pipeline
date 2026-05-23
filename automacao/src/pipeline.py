@@ -74,15 +74,18 @@ def arquivar_peca(peca, estado, cfg, logger) -> bool:
 # ---- aprovacao (stages 05-08) -------------------------------------------
 
 def _alerta_erro(estado, peca, cfg, gmail, falhas: list[str], logger) -> None:
-    detalhe = ", ".join(
-        f"{c}: {estado.canais_publicados[c].get('erro', '?')}" for c in falhas
+    from src.alertas import alertar
+    detalhe = "\n".join(
+        f"  - {c}: {estado.canais_publicados[c].get('erro', '?')}" for c in falhas
     )
-    try:
-        gmail.send_message(
-            build_error_email(peca.peca_id, "stage.05", detalhe, "logs/", cfg.email_aprovador)
-        )
-    except Exception:  # noqa: BLE001
-        pass
+    titulo = f"Peça '{peca.titulo_curto}' falhou em {len(falhas)} canal(is)"
+    corpo = (
+        f"Peça ID: {peca.peca_id}\n"
+        f"Canais com falha:\n{detalhe}\n\n"
+        f"Próximo passo: revisar logs em logs/ e tentar retry manual via painel."
+    )
+    alertar(cfg, gmail, "publisher_falhou", peca.peca_id,
+            titulo=titulo, corpo=corpo, gravidade="alto", logger=logger)
 
 
 def handle_approve(estado, cfg, gmail, store: StateStore, logger) -> None:

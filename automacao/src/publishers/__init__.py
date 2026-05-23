@@ -55,6 +55,25 @@ def publicar_canal(canal: str, peca, cfg, logger) -> PublishResult:
             falhas_consecutivas=info["falhas_consecutivas"],
             erro=str(exc),
         )
+        # se acabou de pausar, dispara alerta critico (throttled 1h)
+        if info.get("pausado_ate"):
+            try:
+                from src.alertas import alertar
+                from src.gmail_client import GmailClient
+                gmail = GmailClient(cfg.google)
+                alertar(
+                    cfg, gmail, "circuit_pausado", canal,
+                    titulo=f"Canal '{canal}' pausado pelo circuit breaker",
+                    corpo=(
+                        f"{info['falhas_consecutivas']} falhas consecutivas. "
+                        f"Pausado até {info['pausado_ate']}.\n\n"
+                        f"Última falha em {peca.peca_id}: {exc}\n\n"
+                        f"Verifique credenciais, status do canal, ou aguarde a pausa expirar."
+                    ),
+                    gravidade="critico", logger=logger,
+                )
+            except Exception:  # noqa: BLE001
+                pass
         return PublishResult.falha(canal, str(exc))
 
 

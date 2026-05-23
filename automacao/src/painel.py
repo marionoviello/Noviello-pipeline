@@ -14,6 +14,7 @@ from pathlib import Path
 from flask import (
     Flask,
     abort,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -23,6 +24,7 @@ from flask import (
 
 from src.cadencia_state import CadenciaState
 from src.config import load_config
+from src.health import status_geral
 from src.manifest import carregar_manifest
 from src.producer_state import EstadoProd, ProducaoStore
 from src.state import Estado, StateStore
@@ -142,6 +144,18 @@ def criar_app(cfg) -> Flask:
         alternar_cadencia(cfg, nova)
         return redirect(url_for("index"))
 
+    @app.get("/health")
+    @app.get("/health.json")
+    def health_json():
+        snapshot = status_geral(cfg)
+        # HTTP 200 se ok, 503 se nao (compativel com Uptime Kuma)
+        return jsonify(snapshot), 200 if snapshot["ok"] else 503
+
+    @app.get("/health.html")
+    def health_html():
+        snapshot = status_geral(cfg)
+        return render_template("health.html", snapshot=snapshot)
+
     @app.get("/arte/<peca_id>/<arquivo>")
     def arte(peca_id: str, arquivo: str):
         pasta = _pasta_da_peca(cfg, peca_id)
@@ -165,6 +179,8 @@ def criar_app(cfg) -> Flask:
 
 def main() -> int:
     cfg = load_config()
+    from src.heartbeat import bater
+    bater(cfg.state_dir, "painel")
     app = criar_app(cfg)
     app.run(host="127.0.0.1", port=PORTA)
     return 0
