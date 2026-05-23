@@ -1,0 +1,95 @@
+# docker-compose.yml — pipeline Noviello 24/7
+#
+# 6 servicos sobre a mesma imagem:
+#   painel    — Flask localhost:8765, persistente (exposto via tunnel)
+#   watcher   — detecta pecas prontas (loop 60s)
+#   poller    — le decisoes do painel + publica (loop 60s)
+#   producer  — gera copy a partir da Fila Social (loop 120s)
+#   cadencia  — promove backlog -> Fila Social (loop 4h)
+#   backup    — empacota state+producao (loop 24h)
+#
+# Opcional:
+#   tunnel    — cloudflared (precisa TUNNEL_TOKEN no .env)
+#
+# Volumes:
+#   noviello-state    -> /var/lib/noviello/state    (cadencia/circuit/alertas)
+#   noviello-producao -> /var/lib/noviello/producao (pecas em andamento)
+#   noviello-backups  -> /var/lib/noviello/backups  (tar.gz diarios)
+#   noviello-logs     -> /var/log/noviello          (logs estruturados)
+
+x-pipeline-common: &pipeline-common
+  image: noviello-pipeline:latest
+  build:
+    context: .
+    dockerfile: automacao/Dockerfile
+  env_file:
+    - .env
+  volumes:
+    - noviello-state:/var/lib/noviello/state
+    - noviello-producao:/var/lib/noviello/producao
+    - noviello-backups:/var/lib/noviello/backups
+    - noviello-logs:/var/log/noviello
+  restart: unless-stopped
+  networks: [noviello]
+
+services:
+  painel:
+    <<: *pipeline-common
+    container_name: noviello-painel
+    command: python -m src.painel
+    ports:
+      - "127.0.0.1:8765:8765"   # so localhost (tunel cuida da exposicao publica)
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request,sys; r=urllib.request.urlopen(\"http://localhost:8765/health.json\",timeout=5); sys.exit(0 if r.status==200 else 1)'"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  watcher:
+    <<: *pipeline-common
+    container_name: noviello-watcher
+    command: ["sh", "-c", "while true; do python -m src.watcher; sleep 60; done"]
+
+  poller:
+    <<: *pipeline-common
+    container_name: noviello-poller
+    command: ["sh", "-c", "while true; do python -m src.poller; sleep 60; done"]
+
+  producer:
+    <<: *pipeline-common
+    container_name: noviello-producer
+    command: ["sh", "-c", "while true; do python -m src.producer; sleep 120; done"]
+
+  cadencia:
+    <<: *pipeline-common
+    container_name: noviello-cadencia
+    command: ["sh", "-c", "while true; do python -m src.cadencia; sleep 14400; done"]   # 4h
+
+  backup:
+    <<: *pipeline-common
+    container_name: noviello-backup
+    command: ["sh", "-c", "while true; do python -m src.backup; sleep 86400; done"]    # 24h
+
+  # Tunnel Cloudflare (opcional) — descomente e configure TUNNEL_TOKEN no .env
+  # tunnel:
+  #   image: cloudflare/cloudflared:latest
+  #   container_name: noviello-tunnel
+  #   command: tunnel --no-autoupdate run
+  #   environment:
+  #     TUNNEL_TOKEN: ${CLOUDFLARED_TUNNEL_TOKEN}
+  #   restart: unless-stopped
+  #   networks: [noviello]
+  #   depends_on:
+  #     painel:
+  #       condition: service_healthy
+
+volumes:
+  noviello-state:
+  noviello-producao:
+  noviello-backups:
+  noviello-logs:
+
+networks:
+  noviello:
+    driver: bridge

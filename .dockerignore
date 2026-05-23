@@ -1,0 +1,51 @@
+# Tudo que nao deve entrar na imagem
+.git/
+.gitignore
+.venv/
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+
+# Arquivos sensiveis (devem vir via volume/secret, nao na imagem)
+.env
+.env.*
+client_secret*.json
+*token*.json
+service_account*.json
+.google_token
+
+# Estado runtime — vem via volume montado
+automacao/state/
+automacao/logs/
+producao/
+publicado/
+cancelados/
+
+# Demos e samples efemeros
+automacao/samples/*.html
+automacao/samples/*.png
+automacao/samples/*.jpg
+automacao/samples/*.jpeg
+automacao/samples/*.pdf
+
+# Pastas pessoais que nao vao pro container
+auditoria-ads/
+manus-resultados/
+identidade-visual/
+conteudo-pre-produzido/
+radar-legislativo/
+memory/
+dashboard.html
+noviello-dashboard.html
+CHECKPOINT-*.md
+STATUS-*.md
+TODO-MARIO.md
+TASKS.md
+
+# OS/IDE
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
