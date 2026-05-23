@@ -24,8 +24,9 @@ $tarefas = @(
     @{ Nome = "Noviello-Watcher";  Modulo = "src.watcher";  Min = 1;   Persistente = $false; Desc = "Detecta pecas prontas e avisa" },
     @{ Nome = "Noviello-Poller";   Modulo = "src.poller";   Min = 1;   Persistente = $false; Desc = "Le a decisao do painel e publica" },
     @{ Nome = "Noviello-Producer"; Modulo = "src.producer"; Min = 2;   Persistente = $false; Desc = "Produz pecas a partir da Fila Social" },
-    @{ Nome = "Noviello-Cadencia"; Modulo = "src.cadencia"; Min = 240; Persistente = $false; Desc = "Cadencia semanal: promove backlog -> Fila Social conforme Google Calendar" },
-    @{ Nome = "Noviello-Painel";   Modulo = "src.painel";   Min = 5;   Persistente = $true;  Desc = "Servidor do painel de aprovacao (localhost:8765)" }
+    @{ Nome = "Noviello-Cadencia"; Modulo = "src.cadencia"; Min = 240;  Persistente = $false; Desc = "Cadencia semanal: promove backlog -> Fila Social conforme Google Calendar" },
+    @{ Nome = "Noviello-Backup";   Modulo = "src.backup";   Min = 1440; Persistente = $false; Desc = "Backup diario de state/ + producao/ em ~/.noviello-backups (mantem 30 ultimos)" },
+    @{ Nome = "Noviello-Painel";   Modulo = "src.painel";   Min = 5;    Persistente = $true;  Desc = "Servidor do painel de aprovacao (localhost:8765)" }
 )
 
 $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited

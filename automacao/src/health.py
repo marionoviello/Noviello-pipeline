@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from src import backup as backup_mod
 from src import heartbeat
 from src.cadencia_state import CadenciaState
 from src.circuit import _load as _circuit_load, canal_pausado
@@ -102,6 +103,25 @@ def _status_cadencia_short(cfg) -> dict:
     }
 
 
+def _status_backup(cfg) -> dict:
+    """Idade do ultimo backup e contagem."""
+    try:
+        backups = backup_mod.listar_backups()
+    except Exception:  # noqa: BLE001
+        backups = []
+    if not backups:
+        return {"total": 0, "ultimo_iso": "", "idade_horas": None}
+    ultimo = backups[0]
+    idade_s = heartbeat.idade_segundos(ultimo["modificado_iso"])
+    return {
+        "total": len(backups),
+        "ultimo_iso": ultimo["modificado_iso"],
+        "ultimo_nome": ultimo["nome"],
+        "ultimo_tamanho_mb": round(ultimo["tamanho_bytes"] / 1024 / 1024, 2),
+        "idade_horas": round(idade_s / 3600, 1) if idade_s != float("inf") else None,
+    }
+
+
 def status_geral(cfg) -> dict:
     """Snapshot completo da saude do sistema."""
     componentes = {
@@ -119,4 +139,5 @@ def status_geral(cfg) -> dict:
         "pecas": _status_pecas(cfg),
         "circuit": _status_circuit(cfg),
         "cadencia": _status_cadencia_short(cfg),
+        "backup": _status_backup(cfg),
     }

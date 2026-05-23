@@ -81,5 +81,13 @@
     <tr><td>Último run</td><td><code>{{ snapshot.cadencia.ultimo_run or '—' }}</code></td></tr>
     <tr><td>Total promovidos</td><td>{{ snapshot.cadencia.total_promovidos }}</td></tr>
   </table>
+
+  <h2>Backup</h2>
+  <table>
+    <tr><td>Total de backups</td><td>{{ snapshot.backup.total }}</td></tr>
+    <tr><td>Último backup</td><td><code>{{ snapshot.backup.ultimo_iso or '—' }}</code></td></tr>
+    <tr><td>Tamanho do último</td><td>{% if snapshot.backup.get('ultimo_tamanho_mb') %}{{ snapshot.backup.ultimo_tamanho_mb }} MB{% else %}—{% endif %}</td></tr>
+    <tr><td>Idade do último</td><td>{% if snapshot.backup.idade_horas is not none %}{{ snapshot.backup.idade_horas }} h{% else %}—{% endif %}</td></tr>
+  </table>
 </body>
 </html>
