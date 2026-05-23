@@ -89,6 +89,15 @@
   .cadencia-historico summary { cursor:pointer; color:var(--claret); font-weight:600; }
   .cadencia-historico ul { margin:8px 0 0; padding-left:20px; }
   .cadencia-historico li { margin-bottom:4px; }
+
+  .ai-tells-bar { display:flex; gap:8px; flex-wrap:wrap; margin:8px 0 16px; }
+  .ai-tell { font-size:11px; padding:4px 10px; border-radius:999px; font-weight:600; text-transform:uppercase; letter-spacing:0.6px; display:inline-flex; align-items:center; gap:6px; }
+  .ai-tell-ok { background:#E6F4EA; color:#1F6B3A; }
+  .ai-tell-aesthetic { background:#FFF3E0; color:#8B5A00; }
+  .ai-tell-strict { background:#FFE4E1; color:#A52A2A; }
+  .ai-tell-forensic { background:#68192E; color:#fff; }
+  .ai-tell-details summary { cursor:pointer; font-size:10px; opacity:0.75; }
+  .ai-tell-details code { font-size:10px; padding:0 4px; opacity:0.85; }
 </style>
 </head>
 <body>
@@ -151,6 +160,23 @@
     {% for item in copy %}
     <div class="card">
       <div class="tit">{{ item.titulo }}</div>
+      {% if item.ai_tells %}
+      <div class="ai-tells-bar">
+        {% for canal, resumo in item.ai_tells.items() %}
+          {% if resumo.total > 0 %}
+            <span class="ai-tell {{ 'ai-tell-forensic' if resumo.forensic else ('ai-tell-strict' if resumo.strict else 'ai-tell-aesthetic') }}">
+              {{ canal }}:
+              {% if resumo.forensic %}{{ resumo.forensic }} críticos{% endif %}
+              {% if resumo.strict %}{% if resumo.forensic %} ·{% endif %} {{ resumo.strict }} corp{% endif %}
+              {% if resumo.aesthetic %}{% if resumo.forensic or resumo.strict %} ·{% endif %} {{ resumo.aesthetic }} estilo{% endif %}
+              <details class="ai-tell-details"><summary>códigos</summary><code>{{ resumo.codigos|join(' ') }}</code></details>
+            </span>
+          {% else %}
+            <span class="ai-tell ai-tell-ok">{{ canal }}: limpo</span>
+          {% endif %}
+        {% endfor %}
+      </div>
+      {% endif %}
       <div class="rotulo">Carrossel — {{ item.slides|length }} slides</div>
       {% for s in item.slides %}
         <div class="slide"><b>{{ loop.index }}. {{ s.titulo }}</b><br>{{ s.corpo }}</div>

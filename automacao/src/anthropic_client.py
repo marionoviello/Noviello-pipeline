@@ -24,6 +24,9 @@ from pathlib import Path
 
 import anthropic
 
+from src import ai_tells_detector
+from src.voice_rules import VOICE_RULES_INSTAGRAM, VOICE_RULES_LINKEDIN
+
 BRIEF = "brief-marca.txt"
 
 # structured output: garante JSON valido para o carrossel
@@ -71,11 +74,18 @@ class AnthropicClient:
             "cache_control": {"type": "ephemeral"},
         }
 
-    def _system_blocks(self, system_extra: str) -> list[dict]:
-        """Brief base + skills extras, num bloco unico cacheado."""
-        sistema = self._brief
+    def _system_blocks(self, system_extra: str, voice_rules: str = "") -> list[dict]:
+        """Brief base + skills extras + voice rules, num bloco unico cacheado.
+
+        voice_rules vai ANTES do brief para dar prioridade (modelo le primeiro).
+        """
+        partes = []
+        if voice_rules and voice_rules.strip():
+            partes.append(voice_rules.strip())
+        partes.append(self._brief)
         if system_extra and system_extra.strip():
-            sistema = self._brief + "\n\n---\n\n" + system_extra.strip()
+            partes.append(system_extra.strip())
+        sistema = "\n\n---\n\n".join(partes)
         return [
             {
                 "type": "text",
@@ -139,7 +149,7 @@ class AnthropicClient:
         with self._client.messages.stream(
             model=self._model,
             max_tokens=24000,
-            system=self._system_blocks(system_extra),
+            system=self._system_blocks(system_extra, voice_rules=VOICE_RULES_INSTAGRAM),
             thinking={"type": "adaptive"},
             output_config={
                 "effort": "medium",
@@ -148,7 +158,14 @@ class AnthropicClient:
             messages=[{"role": "user", "content": self._user_content(artigo_texto, texto, contexto_blog)}],
         ) as stream:
             resp = stream.get_final_message()
-        return json.loads(self._texto_resposta(resp))
+        carrossel = json.loads(self._texto_resposta(resp))
+        # auditoria pos-geracao (anexa como metadado pro painel)
+        texto_concat = " ".join(
+            [carrossel.get("legenda", "")]
+            + [s.get("titulo", "") + " " + s.get("corpo", "") for s in carrossel.get("slides", [])]
+        )
+        carrossel["_ai_tells"] = ai_tells_detector.detectar(texto_concat)
+        return carrossel
 
     def gerar_linkedin(
         self,
@@ -181,7 +198,7 @@ class AnthropicClient:
         with self._client.messages.stream(
             model=self._model,
             max_tokens=8000,
-            system=self._system_blocks(system_extra),
+            system=self._system_blocks(system_extra, voice_rules=VOICE_RULES_LINKEDIN),
             thinking={"type": "adaptive"},
             output_config={"effort": "medium"},
             messages=[{"role": "user", "content": self._user_content(artigo_texto, texto, contexto_blog)}],

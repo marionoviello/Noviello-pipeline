@@ -16,7 +16,7 @@ import json
 import re
 import time
 
-from src import article_styler, carousel_render
+from src import ai_tells_detector, article_styler, carousel_render
 from src.anthropic_client import AnthropicClient
 from src.config import load_config
 from src.emails import build_ping_email
@@ -127,6 +127,14 @@ def processar_artigo_novo(
             estado.artigo_texto, artigo.titulo, _artigo_url(post_id),
             system_extra=system_extra, contexto_blog=contexto_blog,
         )
+        # Auditoria AI-tells: extrai do carrossel (anexado pelo client) + roda
+        # no texto LinkedIn. Resumido pro painel mostrar.
+        carrossel_tells = estado.copy_carrossel.pop("_ai_tells", [])
+        linkedin_tells = ai_tells_detector.detectar(estado.texto_linkedin)
+        estado.ai_tells_resumo = {
+            "carrossel": ai_tells_detector.resumir(carrossel_tells),
+            "linkedin": ai_tells_detector.resumir(linkedin_tells),
+        }
     except Exception as exc:  # noqa: BLE001
         estado.status = EstadoProd.ERRO
         store.save(estado)
@@ -160,6 +168,12 @@ def _regenerar_copy(
             estado.artigo_texto, estado.titulo, _artigo_url(estado.post_id), ajuste=ajuste,
             system_extra=system_extra, contexto_blog=contexto_blog,
         )
+        carrossel_tells = estado.copy_carrossel.pop("_ai_tells", [])
+        linkedin_tells = ai_tells_detector.detectar(estado.texto_linkedin)
+        estado.ai_tells_resumo = {
+            "carrossel": ai_tells_detector.resumir(carrossel_tells),
+            "linkedin": ai_tells_detector.resumir(linkedin_tells),
+        }
     except Exception as exc:  # noqa: BLE001
         log_stage(logger, estado.post_id, "producao.etapaB", "erro_regeracao", erro=str(exc))
         return

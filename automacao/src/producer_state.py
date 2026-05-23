@@ -57,6 +57,10 @@ class ProducaoState:
     copy_carrossel: dict = field(default_factory=dict)  # {slides, legenda, hashtags}
     texto_linkedin: str = ""
     html_estilizado: str = ""
+    # auditoria AI-tells por canal (preenchido na geracao):
+    # {"carrossel": {forensic: N, strict: N, aesthetic: N, codigos: [...]},
+    #  "linkedin":  {...}}
+    ai_tells_resumo: dict = field(default_factory=dict)
     tentativas_ajuste: int = 0
     atualizado_em: str = field(default_factory=agora_iso)
     historico: list = field(default_factory=list)
