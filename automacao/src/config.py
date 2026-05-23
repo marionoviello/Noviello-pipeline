@@ -141,13 +141,18 @@ def load_config() -> Config:
     enabled_raw = _get("ENABLED_CHANNELS", "instagram")
     enabled = [c.strip().lower() for c in enabled_raw.split(",") if c.strip()]
 
+    # paths configuraveis (uteis pra migrar pra VPS Linux ou Docker)
+    state_dir = Path(_get("NOVIELLO_STATE_DIR")) if _get("NOVIELLO_STATE_DIR") else AUTOMACAO_DIR / "state"
+    logs_dir = Path(_get("NOVIELLO_LOGS_DIR")) if _get("NOVIELLO_LOGS_DIR") else AUTOMACAO_DIR / "logs"
+    producao_dir = Path(_get("NOVIELLO_PRODUCAO_DIR")) if _get("NOVIELLO_PRODUCAO_DIR") else PROJECT_ROOT / "producao"
+
     cfg = Config(
         project_root=PROJECT_ROOT,
         automacao_dir=AUTOMACAO_DIR,
-        producao_dir=PROJECT_ROOT / "producao",
-        publicado_dir=PROJECT_ROOT / "producao" / "_publicado",
-        state_dir=AUTOMACAO_DIR / "state",
-        logs_dir=AUTOMACAO_DIR / "logs",
+        producao_dir=producao_dir,
+        publicado_dir=producao_dir / "_publicado",
+        state_dir=state_dir,
+        logs_dir=logs_dir,
         templates_dir=AUTOMACAO_DIR / "templates",
         enabled_channels=enabled,
         dry_run=_bool(_get("DRY_RUN", "true")),

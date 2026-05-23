@@ -28,10 +28,34 @@ def test_getter_prioriza_env_file_nao_vazio(tmp_path, monkeypatch):
 def test_load_config_retorna_config_com_paths():
     cfg = load_config()
     assert isinstance(cfg, Config)
+
+
+def test_paths_configuraveis_via_env(monkeypatch, tmp_path):
+    """Paths state/logs/producao devem ser overrideaveis via env (pra VPS)."""
+    monkeypatch.setenv("NOVIELLO_STATE_DIR", str(tmp_path / "s"))
+    monkeypatch.setenv("NOVIELLO_LOGS_DIR", str(tmp_path / "l"))
+    monkeypatch.setenv("NOVIELLO_PRODUCAO_DIR", str(tmp_path / "p"))
+    cfg = load_config()
+    assert cfg.state_dir == tmp_path / "s"
+    assert cfg.logs_dir == tmp_path / "l"
+    assert cfg.producao_dir == tmp_path / "p"
+    assert cfg.publicado_dir == tmp_path / "p" / "_publicado"
+    # automacao_dir sempre vem do __file__ (nao configuravel — codigo vive aqui)
     assert cfg.automacao_dir.name == "automacao"
-    assert cfg.producao_dir.name == "producao"
+    # state e logs sao criados automaticamente em load_config()
     assert cfg.state_dir.is_dir()
     assert cfg.logs_dir.is_dir()
+
+
+def test_load_config_default_paths_quando_sem_env(monkeypatch):
+    """Sem env override, paths default apontam pro repo."""
+    monkeypatch.delenv("NOVIELLO_STATE_DIR", raising=False)
+    monkeypatch.delenv("NOVIELLO_LOGS_DIR", raising=False)
+    monkeypatch.delenv("NOVIELLO_PRODUCAO_DIR", raising=False)
+    cfg = load_config()
+    assert cfg.producao_dir.name == "producao"
+    assert cfg.state_dir.name == "state"
+    assert cfg.logs_dir.name == "logs"
 
 
 def test_load_config_enabled_channels_e_lista():
