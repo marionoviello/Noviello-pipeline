@@ -1,0 +1,108 @@
+# =============================================================================
+# Credenciais e segredos — NUNCA versionar
+# =============================================================================
+.env
+.env.*
+!.env.example
+*.env
+client_secret*.json
+*credentials*.json
+*token*.json
+service_account*.json
+.google_token
+.cloudflared/
+
+# =============================================================================
+# Python — venv, cache, builds
+# =============================================================================
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# =============================================================================
+# Runtime state da automacao (gerado a cada execucao do pipeline)
+# =============================================================================
+automacao/state/
+automacao/logs/
+automacao/producao/
+automacao/publicado/
+automacao/cancelados/
+state/
+logs/
+producao/
+publicado/
+cancelados/
+*.lock
+*.lock.tmp
+*.tmp
+*.bak
+
+# =============================================================================
+# Demos e samples gerados (HTML/PNG/JPG efemeros)
+# Mantemos apenas os scripts geradores (.py)
+# =============================================================================
+automacao/samples/*.html
+automacao/samples/*.png
+automacao/samples/*.jpg
+automacao/samples/*.jpeg
+automacao/samples/*.pdf
+automacao/samples/demo-*
+automacao/samples/pipeline-real-*
+automacao/samples/teste-*
+automacao/samples/comparacao-*
+automacao/samples/*.json
+automacao/samples/demo-variantes/
+automacao/samples/demo-logo/
+!automacao/samples/_*.py
+!automacao/samples/.gitkeep
+
+# =============================================================================
+# IDE / OS
+# =============================================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =============================================================================
+# Pastas/arquivos pessoais (auditoria, manus, identidade visual privadas)
+# Mario decide quais entram explicitamente
+# =============================================================================
+auditoria-ads/
+manus-resultados/
+identidade-visual/
+conteudo-pre-produzido/
+radar-legislativo/
+memory/
+
+# Documentos de status volateis
+CHECKPOINT-*.md
+STATUS-*.md
+TODO-MARIO.md
+TASKS.md
+
+# =============================================================================
+# Dashboards estaticos (HTML gerados)
+# =============================================================================
+dashboard.html
+noviello-dashboard.html
+
+# =============================================================================
+# Workflows n8n (caso queira manter o .json fora do repo)
+# Descomente se desejar:
+# *.workflow.json
+# automacao/workflow-*.json

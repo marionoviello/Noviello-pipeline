@@ -1,0 +1,502 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "manifest_version": "1.0",
+  "id": "noviello.fluxo.aprovacao-publicacao",
+  "name": "Noviello — Pipeline de Aprovação e Publicação Multicanal",
+  "description": "Manifesto descritivo (não executável) do fluxo que pega uma peça já produzida, envia para Mario aprovar via WhatsApp e publica nos três canais (Instagram, LinkedIn, WordPress) quando aprovada. Premissa: a produção da peça (HTML + JPG + copy) é responsabilidade do ecossistema de skills existente (noviello-marketing-creator, noviello-copy-carrossel-engine, verificador-de-etica-oab-em-publicidade, render-slide.py). Este fluxo começa quando a peça já está pronta e validada por OAB 205/2021.",
+  "owner": "Mario Luiz Noviello Junior — OAB/SP 370.796",
+  "version": "1.0.0",
+  "created_at": "2026-05-17",
+  "environment": "local",
+  "target_os": "Windows 11",
+  "filosofia": [
+    "Humano-no-loop obrigatório: nenhuma peça é publicada sem aprovação explícita de Mario via WhatsApp.",
+    "Falha-segura: na dúvida, não publica e alerta.",
+    "Idempotência: replay da mesma aprovação não duplica publicação.",
+    "Observabilidade: todo passo logga em arquivo local + Google Calendar."
+  ],
+
+  "context": {
+    "raiz_projeto": "C:\\Users\\mario\\Documents\\Noviello-Produtividade",
+    "pasta_producao_semanal": "C:\\Users\\mario\\Documents\\Noviello-Produtividade\\producao\\{ano}-S{semana}",
+    "pasta_publicado": "C:\\Users\\mario\\Documents\\Noviello-Produtividade\\producao\\_publicado",
+    "pasta_logs": "C:\\Users\\mario\\Documents\\Noviello-Produtividade\\automacao\\logs",
+    "calendario_marketing": {
+      "google_calendar_id": "Noviello — Marketing",
+      "fuso": "America/Sao_Paulo",
+      "campo_evento_id_peca": "description (linha 'peca_id: ...')"
+    },
+    "canais_alvo": {
+      "instagram": {
+        "handle": "@novielloadv",
+        "ig_business_id": "{ENV: META_IG_BUSINESS_ID}",
+        "page_id": "{ENV: META_PAGE_ID}"
+      },
+      "linkedin": {
+        "perfil": "Mario Noviello pessoal",
+        "urn_pessoa": "{ENV: LI_PERSON_URN}"
+      },
+      "wordpress": {
+        "site_principal": "https://noviello.adv.br",
+        "site_imobiliario": "https://imobiliario.noviello.adv.br",
+        "endpoint_rest": "/wp-json/wp/v2"
+      }
+    }
+  },
+
+  "triggers": [
+    {
+      "id": "trigger.peca_pronta",
+      "tipo": "filesystem_watch",
+      "descricao": "Detecta criação de arquivo MANIFEST.json dentro de uma pasta de peça pronta.",
+      "watch_path": "C:\\Users\\mario\\Documents\\Noviello-Produtividade\\producao\\*\\*\\MANIFEST.json",
+      "regra": "Arquivo MANIFEST.json criado E status='pronta_para_aprovacao' E nao_existe_log_de_publicacao_dessa_peca"
+    },
+    {
+      "id": "trigger.agendado_calendario",
+      "tipo": "scheduled",
+      "descricao": "A cada 30 min, varre o Google Calendar buscando eventos do dia atual sem registro de publicação. Backup do trigger.peca_pronta.",
+      "cron": "*/30 * * * *",
+      "fonte": "Google Calendar 'Noviello — Marketing'"
+    }
+  ],
+
+  "io_contracts": {
+    "MANIFEST_da_peca": {
+      "descricao": "Arquivo JSON colocado dentro da pasta da peça pelo agente produtor.",
+      "exemplo_path": "C:\\Users\\mario\\Documents\\Noviello-Produtividade\\producao\\2026-S21\\pauta-04-certidoes\\MANIFEST.json",
+      "schema": {
+        "peca_id": "string — identificador único, ex: 2026-S21-pauta04",
+        "tipo": "carrossel | post_unico | reels | story",
+        "pilar": "imobiliario | senior | sucessorio | saude | previdenciario | agro",
+        "data_publicacao_alvo": "ISO8601 com fuso BRT",
+        "status": "pronta_para_aprovacao",
+        "validacoes": {
+          "oab_205": "aprovado | reprovado | nao_aplicavel",
+          "marca": "v2-conforme | desvio_registrado",
+          "ortografia": "ok"
+        },
+        "ativos": {
+          "instagram": {
+            "imagens": ["array de paths absolutos .jpg"],
+            "legenda": "path para .txt da legenda final",
+            "hashtags": "array de hashtags",
+            "tipo_post": "carrossel | post_unico | reels"
+          },
+          "linkedin": {
+            "imagem": "path absoluto .jpg",
+            "texto": "path para .txt do post LI",
+            "url_artigo_wp": "URL do artigo WP correspondente (cross-link)"
+          },
+          "wordpress": {
+            "site_destino": "noviello | imobiliario",
+            "titulo": "string",
+            "slug": "string",
+            "categoria": "string",
+            "tags": "array",
+            "conteudo_html": "path para .html",
+            "imagem_destaque": "path absoluto .jpg",
+            "meta_description": "string até 155 chars",
+            "status_alvo": "publish | future"
+          }
+        },
+        "cross_link": {
+          "ig_para_wp": true,
+          "li_para_wp": true,
+          "linktree_topo": true
+        }
+      }
+    },
+    "payload_aprovacao_whatsapp": {
+      "descricao": "Mensagem enviada via Z-API para o WhatsApp de Mario.",
+      "schema": {
+        "peca_id": "string",
+        "preview_image_url": "URL pública temporária do JPG (servida via tunnel ou WordPress)",
+        "resumo": "string curto: pilar + título + data agendada",
+        "preview_legenda": "primeiras 280 chars da legenda IG",
+        "botoes": [
+          {"id": "approve", "label": "Aprovar e publicar"},
+          {"id": "adjust", "label": "Pedir ajuste"},
+          {"id": "reschedule", "label": "Reagendar"}
+        ],
+        "expira_em": "ISO8601 — 6 horas após envio"
+      }
+    },
+    "webhook_resposta_zapi": {
+      "descricao": "Payload que Z-API envia para o webhook quando Mario clica em um botão.",
+      "schema": {
+        "instanceId": "string",
+        "messageId": "string",
+        "from": "phone E.164",
+        "buttonsResponseMessage": {
+          "buttonId": "approve | adjust | reschedule",
+          "message": "string"
+        },
+        "peca_id_resolvido": "string — extraído do contexto da conversa"
+      }
+    }
+  },
+
+  "stages": [
+    {
+      "id": "stage.01.detectar",
+      "ordem": 1,
+      "nome": "Detectar peça pronta",
+      "trigger_ref": "trigger.peca_pronta",
+      "entrada": "MANIFEST_da_peca",
+      "saida": "objeto interno PecaPronta com paths absolutos validados",
+      "acoes": [
+        "Ler MANIFEST.json",
+        "Validar todos os paths citados existem fisicamente",
+        "Validar validacoes.oab_205 === 'aprovado'",
+        "Validar validacoes.marca === 'v2-conforme'",
+        "Se qualquer validação falhar: parar fluxo, alertar Mario no WhatsApp com motivo"
+      ],
+      "tolerancia_falha": "abort_e_alerta"
+    },
+    {
+      "id": "stage.02.hospedar_preview",
+      "ordem": 2,
+      "nome": "Hospedar imagem para preview WhatsApp",
+      "entrada": "PecaPronta",
+      "saida": "preview_image_url pública",
+      "acoes": [
+        "Upload da primeira imagem do carrossel via WordPress REST /wp/v2/media com status=private",
+        "Obter source_url retornado pelo WP",
+        "Salvar media_id WP no log para limpeza posterior"
+      ],
+      "alternativa": "Se WP indisponível, subir em bucket Cloudflare R2 ou servir via ngrok local (não recomendado em prod).",
+      "integracao_ref": "wordpress_rest"
+    },
+    {
+      "id": "stage.03.enviar_aprovacao_whatsapp",
+      "ordem": 3,
+      "nome": "Enviar aprovação no WhatsApp via Z-API",
+      "entrada": "PecaPronta + preview_image_url",
+      "saida": "messageId Z-API",
+      "acoes": [
+        "Montar payload_aprovacao_whatsapp",
+        "POST Z-API send-button-actions com imagem + 3 botões",
+        "Persistir mapping {messageId -> peca_id} em arquivo de estado (state.json)",
+        "Agendar timeout: se em 6h não houver resposta, mandar follow-up; se em 12h, abortar e alertar"
+      ],
+      "integracao_ref": "zapi_whatsapp"
+    },
+    {
+      "id": "stage.04.aguardar_webhook",
+      "ordem": 4,
+      "nome": "Aguardar webhook de resposta",
+      "entrada": "messageId",
+      "saida": "comando: approve | adjust | reschedule | timeout",
+      "acoes": [
+        "Servidor webhook escuta POST /zapi-webhook",
+        "Validar assinatura Z-API",
+        "Resolver peca_id pelo messageId no state.json",
+        "Encaminhar comando para o estágio correspondente"
+      ],
+      "endpoint_local": "http://localhost:8787/zapi-webhook",
+      "exposicao_publica": "Cloudflare Tunnel ou ngrok com domínio fixo",
+      "integracao_ref": "zapi_whatsapp"
+    },
+    {
+      "id": "stage.05a.publicar_instagram",
+      "ordem": 5,
+      "nome": "Publicar no Instagram (Graph API)",
+      "condicao": "comando === 'approve' AND PecaPronta.ativos.instagram exists",
+      "entrada": "PecaPronta",
+      "saida": "{ig_media_id, ig_permalink}",
+      "acoes": [
+        "Para cada imagem do carrossel: POST /{IG_BUSINESS_ID}/media com is_carousel_item=true",
+        "Criar container final POST /{IG_BUSINESS_ID}/media com media_type=CAROUSEL e children=[ids]",
+        "Aguardar status_code='FINISHED' (polling a cada 2s, máx 30s)",
+        "POST /{IG_BUSINESS_ID}/media_publish com creation_id",
+        "Obter permalink GET /{ig_media_id}?fields=permalink"
+      ],
+      "rate_limit": "100 posts / 24h (Meta)",
+      "tolerancia_falha": "retry_exponencial_3x_depois_alerta",
+      "integracao_ref": "meta_graph_api"
+    },
+    {
+      "id": "stage.05b.publicar_linkedin",
+      "ordem": 5,
+      "nome": "Publicar no LinkedIn",
+      "condicao": "comando === 'approve' AND PecaPronta.ativos.linkedin exists",
+      "entrada": "PecaPronta",
+      "saida": "{li_post_urn, li_url}",
+      "acoes": [
+        "Upload imagem: POST /rest/images?action=initializeUpload + PUT no uploadUrl",
+        "Criar post: POST /rest/posts com author=urn:li:person:{LI_PERSON_URN} e content.media.id={image_urn}",
+        "Salvar URN retornado"
+      ],
+      "tolerancia_falha": "retry_exponencial_3x_depois_alerta",
+      "integracao_ref": "linkedin_api"
+    },
+    {
+      "id": "stage.05c.publicar_wordpress",
+      "ordem": 5,
+      "nome": "Publicar artigo no WordPress",
+      "condicao": "comando === 'approve' AND PecaPronta.ativos.wordpress exists",
+      "entrada": "PecaPronta",
+      "saida": "{wp_post_id, wp_url}",
+      "acoes": [
+        "Upload imagem destaque: POST /wp/v2/media (multipart) -> obter media.id",
+        "Criar post: POST /wp/v2/posts com featured_media=media.id, status=publish (ou future com date)",
+        "Salvar post.id e post.link"
+      ],
+      "site_resolucao": "PecaPronta.ativos.wordpress.site_destino determina host (noviello vs imobiliario)",
+      "tolerancia_falha": "retry_exponencial_3x_depois_alerta",
+      "integracao_ref": "wordpress_rest"
+    },
+    {
+      "id": "stage.06.atualizar_linktree",
+      "ordem": 6,
+      "nome": "Atualizar Linktree com o novo artigo no topo",
+      "condicao": "publicacao_wp.sucesso === true AND PecaPronta.cross_link.linktree_topo === true",
+      "entrada": "wp_url, titulo",
+      "saida": "linktree_atualizada=true",
+      "acoes": [
+        "Linktree não tem API pública estável.",
+        "Opção A: Playwright automation logando como Mario e movendo o link novo para o topo",
+        "Opção B: skip e gerar TODO para Mario fazer manualmente",
+        "Default: Opção B até validarmos Opção A"
+      ],
+      "tolerancia_falha": "skip_e_loga"
+    },
+    {
+      "id": "stage.07.confirmar_whatsapp",
+      "ordem": 7,
+      "nome": "Enviar confirmação no WhatsApp",
+      "entrada": "{ig_permalink, li_url, wp_url}",
+      "saida": "messageId Z-API",
+      "acoes": [
+        "Mensagem de texto formatada: 'Publicado com sucesso. IG: <link> · LI: <link> · WP: <link>. Linktree pendente manualmente.'",
+        "Enviar via Z-API send-text"
+      ],
+      "integracao_ref": "zapi_whatsapp"
+    },
+    {
+      "id": "stage.08.persistir_e_arquivar",
+      "ordem": 8,
+      "nome": "Persistir resultado e mover peça",
+      "acoes": [
+        "Mover pasta de produção para _publicado/ com sufixo timestamp",
+        "Anexar PROOF.json (todos os URLs e IDs)",
+        "Atualizar evento do Google Calendar adicionando linha 'publicado_em: ISO8601' e 'urls: ...'",
+        "Append log em logs/{ano}-{mes}-publicacoes.jsonl"
+      ]
+    },
+    {
+      "id": "stage.alt.ajuste",
+      "ordem": "ALT",
+      "nome": "Ramo de ajuste",
+      "condicao": "comando === 'adjust'",
+      "acoes": [
+        "Enviar via Z-API: 'Marque os ajustes em uma nota e responda. Vou regerar a peça e te chamar novamente.'",
+        "Marcar peça com status='aguardando_ajuste' no MANIFEST",
+        "Disparar evento para o pipeline de produção retomar — fora do escopo deste fluxo"
+      ]
+    },
+    {
+      "id": "stage.alt.reagendar",
+      "ordem": "ALT",
+      "nome": "Ramo de reagendamento",
+      "condicao": "comando === 'reschedule'",
+      "acoes": [
+        "Enviar lista WhatsApp com 5 datas alternativas baseadas no calendário Marketing",
+        "Quando Mario escolher, atualizar evento do Google Calendar e MANIFEST.data_publicacao_alvo",
+        "Voltar a peça para o estado 'pronta_para_aprovacao' com a nova data"
+      ]
+    }
+  ],
+
+  "integrations": {
+    "zapi_whatsapp": {
+      "vendor": "Z-API.io",
+      "base_url": "https://api.z-api.io/instances/{ENV:ZAPI_INSTANCE_ID}/token/{ENV:ZAPI_TOKEN}",
+      "endpoints_usados": {
+        "send_image_with_buttons": "POST /send-button-list",
+        "send_text": "POST /send-text",
+        "send_list_message": "POST /send-option-list"
+      },
+      "webhook_recebimento": {
+        "url": "http://localhost:8787/zapi-webhook",
+        "exposicao": "Cloudflare Tunnel via cloudflared (nome: noviello-automacao)",
+        "validacao": "header Client-Token === ENV:ZAPI_CLIENT_TOKEN"
+      },
+      "limites": {
+        "mensagens_dia": 1000,
+        "tamanho_imagem_max_mb": 5
+      }
+    },
+    "meta_graph_api": {
+      "vendor": "Meta",
+      "versao": "v21.0",
+      "base_url": "https://graph.facebook.com/v21.0",
+      "token_tipo": "Page Access Token (long-lived)",
+      "renovacao_agendada": "2026-07-06",
+      "endpoints_usados": {
+        "criar_media_item": "POST /{IG_BUSINESS_ID}/media",
+        "publicar_carrossel": "POST /{IG_BUSINESS_ID}/media_publish",
+        "obter_permalink": "GET /{media_id}?fields=permalink"
+      },
+      "limites": "100 publicações IG / 24h"
+    },
+    "linkedin_api": {
+      "vendor": "LinkedIn",
+      "versao": "Rest v202404",
+      "base_url": "https://api.linkedin.com/rest",
+      "token_tipo": "OAuth 2.0 com refresh — w_member_social",
+      "endpoints_usados": {
+        "upload_imagem_init": "POST /images?action=initializeUpload",
+        "upload_imagem_put": "PUT {uploadUrl}",
+        "criar_post": "POST /posts"
+      },
+      "headers_obrigatorios": {
+        "LinkedIn-Version": "202404",
+        "X-Restli-Protocol-Version": "2.0.0"
+      }
+    },
+    "wordpress_rest": {
+      "vendor": "WordPress self-host",
+      "hosts": {
+        "noviello": "https://noviello.adv.br/wp-json/wp/v2",
+        "imobiliario": "https://imobiliario.noviello.adv.br/wp-json/wp/v2"
+      },
+      "auth": "Application Password — Basic Auth (user:app_password base64)",
+      "endpoints_usados": {
+        "upload_media": "POST /media",
+        "criar_post": "POST /posts",
+        "atualizar_post": "POST /posts/{id}"
+      }
+    },
+    "google_calendar": {
+      "vendor": "Google",
+      "scopes": ["calendar.events"],
+      "endpoints_usados": {
+        "listar_eventos": "GET /calendars/{calendarId}/events",
+        "atualizar_evento": "PATCH /calendars/{calendarId}/events/{eventId}"
+      },
+      "calendar_id": "Noviello — Marketing"
+    }
+  },
+
+  "secrets": [
+    {"env": "ZAPI_INSTANCE_ID", "uso": "Z-API instance"},
+    {"env": "ZAPI_TOKEN", "uso": "Z-API instance token"},
+    {"env": "ZAPI_CLIENT_TOKEN", "uso": "validar webhook Z-API"},
+    {"env": "META_PAGE_TOKEN", "uso": "Graph API long-lived", "renovacao": "2026-07-06"},
+    {"env": "META_IG_BUSINESS_ID", "uso": "ID do IG Business @novielloadv"},
+    {"env": "META_PAGE_ID", "uso": "Page ID conectada ao IG"},
+    {"env": "LI_ACCESS_TOKEN", "uso": "LinkedIn API"},
+    {"env": "LI_REFRESH_TOKEN", "uso": "renovação"},
+    {"env": "LI_PERSON_URN", "uso": "autoria dos posts"},
+    {"env": "WP_USER", "uso": "username WP REST"},
+    {"env": "WP_APP_PASSWORD_NOVIELLO", "uso": "App Password noviello.adv.br"},
+    {"env": "WP_APP_PASSWORD_IMOBILIARIO", "uso": "App Password imobiliario.noviello.adv.br"},
+    {"env": "GOOGLE_SERVICE_ACCOUNT_JSON", "uso": "Service Account JSON do Google Calendar"}
+  ],
+
+  "secrets_storage": {
+    "padrao": "Arquivo .env na raiz do projeto fora do Git (já no .gitignore)",
+    "path": "C:\\Users\\mario\\Documents\\Noviello-Produtividade\\.env",
+    "backup": "1Password ou Bitwarden — item 'Noviello Automação Local'"
+  },
+
+  "error_handling": {
+    "politica_retry": {
+      "tentativas": 3,
+      "backoff": "exponencial — 2s, 8s, 32s",
+      "aplicavel_a": ["5xx", "timeout de rede", "429 Meta"]
+    },
+    "alertas_whatsapp": {
+      "destino": "{ENV:MARIO_WHATSAPP}",
+      "gatilhos": [
+        "publicacao_falhou_apos_3_retries",
+        "token_meta_expirado",
+        "validacao_oab_205_falhou_na_stage_01",
+        "imagem_preview_indisponivel"
+      ],
+      "formato": "🚨 Noviello Automação — {gatilho} — peca_id: {id} — detalhe: {erro_curto} — log: {path}"
+    },
+    "circuit_breaker": {
+      "limite": "3 falhas consecutivas no mesmo canal",
+      "acao": "pausar canal por 1h e alertar"
+    }
+  },
+
+  "observability": {
+    "log_estruturado": {
+      "formato": "JSONL",
+      "path": "C:\\Users\\mario\\Documents\\Noviello-Produtividade\\automacao\\logs\\{ano}-{mes}-publicacoes.jsonl",
+      "campos_minimos": ["timestamp", "peca_id", "stage", "status", "duracao_ms", "erro"]
+    },
+    "metricas_semana": {
+      "geradas_em": "sexta 17h via scheduled task",
+      "campos": ["pecas_publicadas", "pecas_ajustadas", "pecas_falhadas", "tempo_medio_aprovacao_min"]
+    }
+  },
+
+  "idempotencia": {
+    "chave_principal": "peca_id",
+    "regra": "Se peca_id já existe em logs/_publicado/, NÃO republicar. Retornar PROOF anterior."
+  },
+
+  "rollback": {
+    "ig": "Não há rollback automático — Mario precisa deletar manualmente via app (Meta não permite delete por API após publicação).",
+    "linkedin": "DELETE /rest/posts/{urn} dentro de 24h",
+    "wordpress": "Mudar status=draft via PATCH /posts/{id}",
+    "linktree": "Manual"
+  },
+
+  "fora_de_escopo": [
+    "Produção do HTML/JPG da peça — feito pelas skills do ecossistema (noviello-carrossel-creator, render-slide.py)",
+    "Geração da copy (legenda IG, post LI, artigo WP) — feito por noviello-copy-carrossel-engine + noviello-copywriter",
+    "Verificação OAB 205/2021 — feito por verificador-de-etica-oab-em-publicidade ANTES desse fluxo",
+    "Reels com avatar HeyGen — pipeline separado",
+    "Gestão de leads que chegam pelo Instagram — já tratado pelo CRM atual"
+  ],
+
+  "implementation_notes": {
+    "stack_recomendada": {
+      "opcao_a_python_local": {
+        "descricao": "Script Python persistente rodando como serviço Windows (NSSM) escutando filesystem e webhook.",
+        "libs": ["watchdog (filesystem)", "fastapi (webhook)", "httpx (HTTP)", "tenacity (retry)", "python-dotenv (secrets)"],
+        "deploy": "NSSM cria serviço Windows que sobe na inicialização",
+        "tunnel": "cloudflared como serviço Windows com domínio fixo noviello-automacao.{seu-dominio}"
+      },
+      "opcao_b_n8n_local": {
+        "descricao": "n8n self-host em Docker Desktop no Windows com workflow visual.",
+        "vantagem": "Visual + logs nativos + retry built-in",
+        "desvantagem": "Curva de Docker + manutenção do container",
+        "exportavel": "n8n permite export do workflow para JSON — útil para versionar mesmo sendo uso local"
+      },
+      "opcao_c_claude_code_subagent": {
+        "descricao": "Subagent do Claude Code com hooks que reagem a arquivo MANIFEST.json criado.",
+        "vantagem": "Já tem skills do ecossistema disponíveis",
+        "desvantagem": "Claude Code precisa estar rodando — não é daemon persistente nativo. Precisaria de wrapper.",
+        "viabilidade": "Possível com hook PostToolUse + slash command /publicar, mas exige Mario disparar manualmente"
+      }
+    },
+    "recomendacao": "Opção A (Python + NSSM + Cloudflare Tunnel) — mais robusta para uso solo e independente do Claude Code estar aberto.",
+    "estimativa_implementacao": "~12h de desenvolvimento + 4h de testes ponta-a-ponta com peça real."
+  },
+
+  "next_steps_para_implementar": [
+    "1. Criar arquivo .env com todos os secrets listados em 'secrets'",
+    "2. Criar pasta C:\\Users\\mario\\Documents\\Noviello-Produtividade\\automacao\\{src, logs, state}",
+    "3. Implementar script Python (opção A) com watcher + servidor FastAPI + clients dos 4 vendors",
+    "4. Configurar Cloudflare Tunnel apontando para localhost:8787",
+    "5. Configurar webhook Z-API apontando para o domínio público do tunnel",
+    "6. Testar end-to-end com uma peça-piloto em modo 'dry-run' (publica em conta IG de teste e WP em draft)",
+    "7. Instalar como serviço Windows via NSSM: nssm install NovielloAutomacao",
+    "8. Adicionar entrada no Linktree manual para o último artigo (até automação Linktree estar pronta)"
+  ],
+
+  "links_para_skills_do_ecossistema_que_alimentam_este_fluxo": [
+    "noviello-marketing-creator",
+    "noviello-copy-carrossel-engine",
+    "noviello-carrossel-creator",
+    "verificador-de-etica-oab-em-publicidade",
+    "noviello-publisher-instagram"
+  ]
+}

@@ -1,0 +1,654 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "manifest_version": "2.0",
+  "id": "noviello.fluxo.aprovacao-publicacao-email",
+  "name": "Noviello — Pipeline de Aprovação e Publicação Multicanal (Email-based)",
+  "description": "Manifesto descritivo (não executável) do fluxo que pega uma peça já produzida, envia email simples para mario@noviello.adv.br aprovar e publica nos três canais (Instagram, LinkedIn, WordPress) quando aprovada. Substitui v1 (WhatsApp via Z-API) — agora usa Gmail API com polling + labels, elimina custo Z-API e elimina necessidade de tunnel público. Premissa: a produção da peça (HTML + JPG + copy) é responsabilidade do ecossistema de skills existente (noviello-marketing-creator, noviello-copy-carrossel-engine, verificador-de-etica-oab-em-publicidade, render-slide.py). Este fluxo começa quando a peça já está pronta e validada por OAB 205/2021.",
+  "owner": "Mario Luiz Noviello Junior — OAB/SP 370.796",
+  "version": "2.0.0",
+  "created_at": "2026-05-17",
+  "replaces": "workflow-aprovacao-publicacao.json (v1.0 — WhatsApp Z-API)",
+  "environment": "local",
+  "target_os": "Windows 11",
+
+  "filosofia": [
+    "Humano-no-loop obrigatório: nenhuma peça é publicada sem aprovação explícita de Mario via email.",
+    "Falha-segura: na dúvida, não publica e alerta.",
+    "Idempotência: replay da mesma aprovação não duplica publicação.",
+    "Observabilidade: todo passo logga em arquivo local + Google Calendar + Gmail label persistente.",
+    "Zero-tunnel: polling Gmail substitui webhook público — daemon roda 100% local.",
+    "Zero-custo-recorrente: Gmail API é grátis dentro do Workspace que Mario já paga."
+  ],
+
+  "mudancas_v1_para_v2": {
+    "removido": [
+      "Integração Z-API (~R$ 200/mês de custo)",
+      "Cloudflare Tunnel (necessário para webhook público)",
+      "Estágio de webhook handler (FastAPI escutando POST /zapi-webhook)",
+      "Validação de assinatura Z-API"
+    ],
+    "adicionado": [
+      "Integração Gmail API via OAuth Google Workspace",
+      "Label hierárquica Noviello-Aprovacao/{Pendente,_APROVADO,_AJUSTAR,_REAGENDAR}",
+      "Polling Gmail a cada 30s (configurável)",
+      "Reply parsing para capturar instruções de ajuste em texto livre",
+      "Atalhos de teclado Gmail para Mario sinalizar decisão em 2 segundos"
+    ],
+    "mantido": [
+      "Upload de imagem no WordPress REST para servir preview público",
+      "Publicação multicanal IG (Graph API) + LinkedIn + WordPress",
+      "Idempotência por peca_id",
+      "Error handling com retry exponencial",
+      "Stages 05a/b/c, 06, 08 inalterados"
+    ]
+  },
+
+  "context": {
+    "raiz_projeto": "C:\\Users\\mario\\Documents\\Noviello-Produtividade",
+    "pasta_producao_semanal": "C:\\Users\\mario\\Documents\\Noviello-Produtividade\\producao\\{ano}-S{semana}",
+    "pasta_publicado": "C:\\Users\\mario\\Documents\\Noviello-Produtividade\\producao\\_publicado",
+    "pasta_logs": "C:\\Users\\mario\\Documents\\Noviello-Produtividade\\automacao\\logs",
+    "pasta_state": "C:\\Users\\mario\\Documents\\Noviello-Produtividade\\automacao\\state",
+    "calendario_marketing": {
+      "google_calendar_id": "Noviello — Marketing",
+      "fuso": "America/Sao_Paulo"
+    },
+    "email_aprovador": "mario@noviello.adv.br",
+    "canais_alvo": {
+      "instagram": {
+        "handle": "@novielloadv",
+        "ig_business_id": "{ENV: META_IG_BUSINESS_ID}",
+        "page_id": "{ENV: META_PAGE_ID}"
+      },
+      "linkedin": {
+        "perfil": "Mario Noviello pessoal",
+        "urn_pessoa": "{ENV: LI_PERSON_URN}"
+      },
+      "wordpress": {
+        "site_principal": "https://noviello.adv.br",
+        "site_imobiliario": "https://imobiliario.noviello.adv.br",
+        "endpoint_rest": "/wp-json/wp/v2"
+      }
+    }
+  },
+
+  "gmail_labels": {
+    "estrutura": "Hierarquia única dedicada à automação, criada no setup",
+    "labels": [
+      {
+        "name": "Noviello-Aprovacao",
+        "tipo": "parent",
+        "uso": "Container — nenhum email fica direto aqui"
+      },
+      {
+        "name": "Noviello-Aprovacao/Pendente",
+        "tipo": "child",
+        "uso": "Daemon aplica ao enviar o email. Estado inicial de toda peça."
+      },
+      {
+        "name": "Noviello-Aprovacao/_APROVADO",
+        "tipo": "child",
+        "uso": "Mario move o email para cá. Daemon detecta e publica.",
+        "atalho_gmail_sugerido": "l + digitar nome (configurar via Settings > Labels)"
+      },
+      {
+        "name": "Noviello-Aprovacao/_AJUSTAR",
+        "tipo": "child",
+        "uso": "Mario move + responde com observação. Daemon roteia para fluxo de ajuste."
+      },
+      {
+        "name": "Noviello-Aprovacao/_REAGENDAR",
+        "tipo": "child",
+        "uso": "Mario move. Daemon abre conversa para escolher nova data."
+      },
+      {
+        "name": "Noviello-Aprovacao/_PUBLICADO",
+        "tipo": "child",
+        "uso": "Aplicado pelo daemon após publicação bem-sucedida. Email arquivado automaticamente."
+      },
+      {
+        "name": "Noviello-Aprovacao/_ERRO",
+        "tipo": "child",
+        "uso": "Aplicado pelo daemon se publicação falhou nos 3 retries."
+      }
+    ]
+  },
+
+  "triggers": [
+    {
+      "id": "trigger.peca_pronta",
+      "tipo": "filesystem_watch",
+      "descricao": "Detecta criação de MANIFEST.json em uma pasta de peça pronta.",
+      "watch_path": "C:\\Users\\mario\\Documents\\Noviello-Produtividade\\producao\\*\\*\\MANIFEST.json",
+      "regra": "MANIFEST.json criado E status='pronta_para_aprovacao' E peca_id não existe em logs"
+    },
+    {
+      "id": "trigger.gmail_polling",
+      "tipo": "scheduled",
+      "descricao": "A cada 30 segundos, varre Gmail buscando threads com label 'Noviello-Aprovacao/Pendente' que tenham sido movidas para outra label do conjunto OU que tenham reply.",
+      "intervalo_segundos": 30,
+      "query_gmail": "label:Noviello-Aprovacao newer_than:7d"
+    },
+    {
+      "id": "trigger.agendado_calendario",
+      "tipo": "scheduled",
+      "descricao": "A cada 30 min, varre Google Calendar buscando eventos do dia sem registro de publicação. Backup do trigger.peca_pronta.",
+      "cron": "*/30 * * * *",
+      "fonte": "Google Calendar 'Noviello — Marketing'"
+    }
+  ],
+
+  "io_contracts": {
+    "MANIFEST_da_peca": {
+      "descricao": "Arquivo JSON colocado na pasta da peça pelo agente produtor. Inalterado da v1.",
+      "exemplo_path": "C:\\Users\\mario\\Documents\\Noviello-Produtividade\\producao\\2026-S21\\pauta-04-certidoes\\MANIFEST.json",
+      "schema": {
+        "peca_id": "string — identificador único, ex: 2026-S21-pauta04",
+        "tipo": "carrossel | post_unico | reels | story",
+        "pilar": "imobiliario | senior | sucessorio | saude | previdenciario | agro",
+        "titulo_curto": "string — usado no subject do email",
+        "data_publicacao_alvo": "ISO8601 com fuso BRT",
+        "status": "pronta_para_aprovacao",
+        "validacoes": {
+          "oab_205": "aprovado | reprovado | nao_aplicavel",
+          "marca": "v2-conforme | desvio_registrado",
+          "ortografia": "ok"
+        },
+        "ativos": {
+          "instagram": {
+            "imagens": ["array de paths absolutos .jpg"],
+            "legenda": "path para .txt da legenda final",
+            "hashtags": "array de hashtags",
+            "tipo_post": "carrossel | post_unico | reels"
+          },
+          "linkedin": {
+            "imagem": "path absoluto .jpg",
+            "texto": "path para .txt do post LI",
+            "url_artigo_wp": "URL do artigo WP correspondente (cross-link)"
+          },
+          "wordpress": {
+            "site_destino": "noviello | imobiliario",
+            "titulo": "string",
+            "slug": "string",
+            "categoria": "string",
+            "tags": "array",
+            "conteudo_html": "path para .html",
+            "imagem_destaque": "path absoluto .jpg",
+            "meta_description": "string até 155 chars",
+            "status_alvo": "publish | future"
+          }
+        },
+        "cross_link": {
+          "ig_para_wp": true,
+          "li_para_wp": true,
+          "linktree_topo": true
+        }
+      }
+    },
+
+    "email_de_aprovacao": {
+      "descricao": "Email simples enviado ao Mario via Gmail API. Conforme aprovação visual do draft id r988033505248382443.",
+      "to": "mario@noviello.adv.br",
+      "from": "mario@noviello.adv.br (auto-envio via Gmail API com OAuth do próprio Mario)",
+      "subject_template": "[Aprovar] {pilar} — {titulo_curto}",
+      "label_aplicada": "Noviello-Aprovacao/Pendente",
+      "estrutura_corpo": [
+        "Linha 1: 'Peça pronta para publicação em @novielloadv.'",
+        "Bloco preview: link para JPG público (uploaded ao WP)",
+        "Separador",
+        "Bloco legenda: texto completo da legenda IG",
+        "Separador",
+        "Botão único 'APROVAR E PUBLICAR' (link mágico opcional ou só visual)",
+        "Linha rodapé: 'Para ajustar, responda este email descrevendo o que mudar.'"
+      ],
+      "html_template_path": "C:\\Users\\mario\\Documents\\Noviello-Produtividade\\automacao\\templates\\email-aprovacao.html"
+    },
+
+    "sinais_de_aprovacao": {
+      "descricao": "Como o daemon detecta o que Mario quer fazer com a peça.",
+      "ordem_de_precedencia": [
+        "1. Label movida para Noviello-Aprovacao/_APROVADO → publicar",
+        "2. Label movida para Noviello-Aprovacao/_AJUSTAR → fluxo de ajuste",
+        "3. Label movida para Noviello-Aprovacao/_REAGENDAR → fluxo de reagendamento",
+        "4. Reply ao thread sem mover label → tratar como ajuste e ler o texto do reply"
+      ],
+      "deteccao_via_gmail_api": {
+        "method": "GET /gmail/v1/users/me/threads?q=label:Noviello-Aprovacao newer_than:7d",
+        "verificar_labels_atuais": "Comparar labelIds do thread com state.json local — mudanças disparam ação",
+        "verificar_reply": "messagesCount > 1 indica que Mario respondeu"
+      }
+    }
+  },
+
+  "stages": [
+    {
+      "id": "stage.01.detectar",
+      "ordem": 1,
+      "nome": "Detectar peça pronta",
+      "trigger_ref": "trigger.peca_pronta",
+      "entrada": "MANIFEST_da_peca",
+      "saida": "objeto interno PecaPronta com paths absolutos validados",
+      "acoes": [
+        "Ler MANIFEST.json",
+        "Validar todos os paths citados existem fisicamente",
+        "Validar validacoes.oab_205 === 'aprovado'",
+        "Validar validacoes.marca === 'v2-conforme'",
+        "Se qualquer validação falhar: parar fluxo, enviar email de erro para Mario com motivo"
+      ],
+      "tolerancia_falha": "abort_e_alerta_email"
+    },
+    {
+      "id": "stage.02.hospedar_preview",
+      "ordem": 2,
+      "nome": "Hospedar imagem para preview no email",
+      "entrada": "PecaPronta",
+      "saida": "preview_image_url pública",
+      "acoes": [
+        "Upload da primeira imagem do carrossel via WordPress REST /wp/v2/media com status=private (visível mas não indexada)",
+        "Obter source_url retornado pelo WP",
+        "Salvar wp_media_id em state.json para limpeza posterior se necessário"
+      ],
+      "alternativa": "Se WP indisponível, upload em pasta dedicada do Google Drive (mcp__db1befe5... API) com permissão 'anyone with link' — link incorporável via <img src=>.",
+      "integracao_ref": "wordpress_rest"
+    },
+    {
+      "id": "stage.03.enviar_email_aprovacao",
+      "ordem": 3,
+      "nome": "Enviar email de aprovação via Gmail API",
+      "entrada": "PecaPronta + preview_image_url",
+      "saida": "{message_id, thread_id} do Gmail",
+      "acoes": [
+        "Montar payload conforme io_contracts.email_de_aprovacao",
+        "Carregar HTML template e fazer substituições de variáveis",
+        "POST /gmail/v1/users/me/messages/send com raw MIME (To, Subject, HTML body)",
+        "Capturar message_id e thread_id retornados",
+        "Aplicar label 'Noviello-Aprovacao/Pendente' via POST /gmail/v1/users/me/messages/{id}/modify",
+        "Persistir state: { peca_id, message_id, thread_id, label_atual: 'Pendente', enviado_em: ISO8601 }",
+        "Agendar timeout: se em 12h não houver movimentação, enviar follow-up; se em 24h, marcar como ERRO e alertar"
+      ],
+      "integracao_ref": "gmail_api"
+    },
+    {
+      "id": "stage.04.aguardar_aprovacao",
+      "ordem": 4,
+      "nome": "Aguardar decisão via polling Gmail",
+      "entrada": "thread_id em state.json",
+      "saida": "comando: approve | adjust | reschedule | timeout",
+      "acoes": [
+        "Loop a cada 30s:",
+        "  GET /gmail/v1/users/me/threads/{thread_id}",
+        "  Comparar labelIds atuais com state.label_atual",
+        "  Comparar messagesCount com state.messages_count",
+        "  Se label movida para _APROVADO: comando=approve",
+        "  Se label movida para _AJUSTAR: comando=adjust",
+        "  Se label movida para _REAGENDAR: comando=reschedule",
+        "  Se messagesCount aumentou (reply): comando=adjust + capturar texto do reply mais recente",
+        "Sair do loop quando comando definido OU timeout 24h"
+      ],
+      "integracao_ref": "gmail_api"
+    },
+    {
+      "id": "stage.05a.publicar_instagram",
+      "ordem": 5,
+      "nome": "Publicar no Instagram (Graph API)",
+      "condicao": "comando === 'approve' AND PecaPronta.ativos.instagram exists",
+      "entrada": "PecaPronta",
+      "saida": "{ig_media_id, ig_permalink}",
+      "acoes": [
+        "Para cada imagem do carrossel: POST /{IG_BUSINESS_ID}/media com is_carousel_item=true",
+        "Criar container final POST /{IG_BUSINESS_ID}/media com media_type=CAROUSEL e children=[ids]",
+        "Aguardar status_code='FINISHED' (polling a cada 2s, máx 30s)",
+        "POST /{IG_BUSINESS_ID}/media_publish com creation_id",
+        "Obter permalink GET /{ig_media_id}?fields=permalink"
+      ],
+      "rate_limit": "100 posts / 24h (Meta)",
+      "tolerancia_falha": "retry_exponencial_3x_depois_label_erro",
+      "integracao_ref": "meta_graph_api"
+    },
+    {
+      "id": "stage.05b.publicar_linkedin",
+      "ordem": 5,
+      "nome": "Publicar no LinkedIn",
+      "condicao": "comando === 'approve' AND PecaPronta.ativos.linkedin exists",
+      "entrada": "PecaPronta",
+      "saida": "{li_post_urn, li_url}",
+      "acoes": [
+        "Upload imagem: POST /rest/images?action=initializeUpload + PUT no uploadUrl",
+        "Criar post: POST /rest/posts com author=urn:li:person:{LI_PERSON_URN} e content.media.id={image_urn}",
+        "Salvar URN retornado"
+      ],
+      "tolerancia_falha": "retry_exponencial_3x_depois_label_erro",
+      "integracao_ref": "linkedin_api"
+    },
+    {
+      "id": "stage.05c.publicar_wordpress",
+      "ordem": 5,
+      "nome": "Publicar artigo no WordPress",
+      "condicao": "comando === 'approve' AND PecaPronta.ativos.wordpress exists",
+      "entrada": "PecaPronta",
+      "saida": "{wp_post_id, wp_url}",
+      "acoes": [
+        "Upload imagem destaque: POST /wp/v2/media (multipart) → obter media.id",
+        "Criar post: POST /wp/v2/posts com featured_media=media.id, status=publish (ou future com date)",
+        "Salvar post.id e post.link"
+      ],
+      "site_resolucao": "PecaPronta.ativos.wordpress.site_destino determina host (noviello vs imobiliario)",
+      "tolerancia_falha": "retry_exponencial_3x_depois_label_erro",
+      "integracao_ref": "wordpress_rest"
+    },
+    {
+      "id": "stage.06.atualizar_linktree",
+      "ordem": 6,
+      "nome": "Atualizar Linktree com o novo artigo no topo",
+      "condicao": "publicacao_wp.sucesso === true AND PecaPronta.cross_link.linktree_topo === true",
+      "entrada": "wp_url, titulo",
+      "saida": "linktree_atualizada=true",
+      "acoes": [
+        "Linktree não tem API pública estável.",
+        "Opção A: Playwright automation logando como Mario e movendo o link novo para o topo",
+        "Opção B: skip e gerar TODO em label 'Noviello-Aprovacao/_TODO_LINKTREE' para Mario fazer manualmente",
+        "Default: Opção B até validarmos Opção A"
+      ],
+      "tolerancia_falha": "skip_e_loga"
+    },
+    {
+      "id": "stage.07.confirmar_email",
+      "ordem": 7,
+      "nome": "Responder o thread original com confirmação",
+      "entrada": "{ig_permalink, li_url, wp_url}",
+      "saida": "novo message_id da resposta",
+      "acoes": [
+        "POST /gmail/v1/users/me/messages/send com In-Reply-To = message_id original",
+        "Corpo: 'Publicado com sucesso. IG: {link} · LI: {link} · WP: {link}. Linktree pendente.'",
+        "Remover label 'Pendente'",
+        "Aplicar label 'Noviello-Aprovacao/_PUBLICADO'",
+        "Arquivar thread (remover INBOX label)"
+      ],
+      "integracao_ref": "gmail_api"
+    },
+    {
+      "id": "stage.08.persistir_e_arquivar",
+      "ordem": 8,
+      "nome": "Persistir resultado e mover peça",
+      "acoes": [
+        "Mover pasta de produção para _publicado/ com sufixo timestamp",
+        "Anexar PROOF.json (todos os URLs e IDs)",
+        "Atualizar evento do Google Calendar adicionando linha 'publicado_em: ISO8601' e 'urls: ...'",
+        "Append log em logs/{ano}-{mes}-publicacoes.jsonl",
+        "Limpar entrada em state.json"
+      ]
+    },
+    {
+      "id": "stage.alt.ajuste",
+      "ordem": "ALT",
+      "nome": "Ramo de ajuste",
+      "condicao": "comando === 'adjust'",
+      "acoes": [
+        "Ler texto do reply mais recente do thread (Gmail API: get_thread + extract plain_body)",
+        "Salvar texto em pasta da peça como AJUSTE-{timestamp}.txt",
+        "Marcar peça com status='aguardando_ajuste' no MANIFEST",
+        "Aplicar label 'Noviello-Aprovacao/_AJUSTAR' se ainda não estiver",
+        "Enviar reply no thread: 'Recebido. Vou regerar a peça com os ajustes e te chamar novamente neste mesmo thread.'",
+        "Disparar evento para o pipeline de produção retomar — fora do escopo deste fluxo"
+      ]
+    },
+    {
+      "id": "stage.alt.reagendar",
+      "ordem": "ALT",
+      "nome": "Ramo de reagendamento",
+      "condicao": "comando === 'reschedule'",
+      "acoes": [
+        "Enviar reply no thread com lista de 5 datas alternativas baseadas no calendário Marketing",
+        "Aguardar próximo reply de Mario com a data escolhida (parse de formato ISO8601 ou DD/MM)",
+        "Atualizar evento do Google Calendar e MANIFEST.data_publicacao_alvo",
+        "Mover label de volta para 'Pendente' para nova ciclagem"
+      ]
+    }
+  ],
+
+  "integrations": {
+    "gmail_api": {
+      "vendor": "Google",
+      "produto": "Gmail API v1",
+      "base_url": "https://gmail.googleapis.com/gmail/v1",
+      "auth": "OAuth 2.0 com refresh token — escopo gmail.modify",
+      "escopos_necessarios": [
+        "https://www.googleapis.com/auth/gmail.send",
+        "https://www.googleapis.com/auth/gmail.modify",
+        "https://www.googleapis.com/auth/gmail.labels"
+      ],
+      "setup_inicial": [
+        "1. Criar projeto no Google Cloud Console",
+        "2. Habilitar Gmail API",
+        "3. Criar OAuth Client (Desktop application)",
+        "4. Rodar fluxo de consentimento UMA VEZ no Windows — guardar refresh_token",
+        "5. Daemon usa refresh_token para renovar access_token automaticamente"
+      ],
+      "endpoints_usados": {
+        "enviar_email": "POST /users/me/messages/send",
+        "listar_threads": "GET /users/me/threads?q=...",
+        "obter_thread": "GET /users/me/threads/{thread_id}",
+        "modificar_labels": "POST /users/me/messages/{id}/modify",
+        "criar_label": "POST /users/me/labels"
+      },
+      "limites": {
+        "quota_diaria": "1.000.000 unidades/dia (sobra MUITO para uso solo)",
+        "envios_por_segundo": "250 quota units por user por segundo"
+      },
+      "vantagens_vs_zapi": [
+        "Custo: zero (vs ~R$ 200/mês Z-API)",
+        "Sem tunnel público necessário",
+        "Anexos até 25 MB (vs 5 MB Z-API)",
+        "Histórico permanente e pesquisável",
+        "Já autenticado se Mario está logado no Workspace"
+      ]
+    },
+    "meta_graph_api": {
+      "vendor": "Meta",
+      "versao": "v21.0",
+      "base_url": "https://graph.facebook.com/v21.0",
+      "token_tipo": "Page Access Token (long-lived)",
+      "renovacao_agendada": "2026-07-06",
+      "endpoints_usados": {
+        "criar_media_item": "POST /{IG_BUSINESS_ID}/media",
+        "publicar_carrossel": "POST /{IG_BUSINESS_ID}/media_publish",
+        "obter_permalink": "GET /{media_id}?fields=permalink"
+      },
+      "limites": "100 publicações IG / 24h"
+    },
+    "linkedin_api": {
+      "vendor": "LinkedIn",
+      "versao": "Rest v202404",
+      "base_url": "https://api.linkedin.com/rest",
+      "token_tipo": "OAuth 2.0 com refresh — w_member_social",
+      "endpoints_usados": {
+        "upload_imagem_init": "POST /images?action=initializeUpload",
+        "upload_imagem_put": "PUT {uploadUrl}",
+        "criar_post": "POST /posts"
+      },
+      "headers_obrigatorios": {
+        "LinkedIn-Version": "202404",
+        "X-Restli-Protocol-Version": "2.0.0"
+      }
+    },
+    "wordpress_rest": {
+      "vendor": "WordPress self-host",
+      "hosts": {
+        "noviello": "https://noviello.adv.br/wp-json/wp/v2",
+        "imobiliario": "https://imobiliario.noviello.adv.br/wp-json/wp/v2"
+      },
+      "auth": "Application Password — Basic Auth (user:app_password base64)",
+      "endpoints_usados": {
+        "upload_media": "POST /media",
+        "criar_post": "POST /posts",
+        "atualizar_post": "POST /posts/{id}"
+      }
+    },
+    "google_calendar": {
+      "vendor": "Google",
+      "scopes": ["calendar.events"],
+      "endpoints_usados": {
+        "listar_eventos": "GET /calendars/{calendarId}/events",
+        "atualizar_evento": "PATCH /calendars/{calendarId}/events/{eventId}"
+      },
+      "calendar_id": "Noviello — Marketing"
+    }
+  },
+
+  "secrets": [
+    {"env": "GMAIL_OAUTH_CLIENT_ID", "uso": "OAuth Desktop Client do Google Cloud Console"},
+    {"env": "GMAIL_OAUTH_CLIENT_SECRET", "uso": "OAuth Desktop Client secret"},
+    {"env": "GMAIL_OAUTH_REFRESH_TOKEN", "uso": "Refresh token gerado no consentimento inicial — permite renovar access_token sem interação"},
+    {"env": "META_PAGE_TOKEN", "uso": "Graph API long-lived", "renovacao": "2026-07-06"},
+    {"env": "META_IG_BUSINESS_ID", "uso": "ID do IG Business @novielloadv"},
+    {"env": "META_PAGE_ID", "uso": "Page ID conectada ao IG"},
+    {"env": "LI_ACCESS_TOKEN", "uso": "LinkedIn API"},
+    {"env": "LI_REFRESH_TOKEN", "uso": "renovação LI"},
+    {"env": "LI_PERSON_URN", "uso": "autoria dos posts"},
+    {"env": "WP_USER", "uso": "username WP REST"},
+    {"env": "WP_APP_PASSWORD_NOVIELLO", "uso": "App Password noviello.adv.br"},
+    {"env": "WP_APP_PASSWORD_IMOBILIARIO", "uso": "App Password imobiliario.noviello.adv.br"},
+    {"env": "GOOGLE_SERVICE_ACCOUNT_JSON", "uso": "Service Account para Calendar (opcional se OAuth do Gmail também der escopo Calendar)"}
+  ],
+
+  "secrets_storage": {
+    "padrao": "Arquivo .env na raiz do projeto fora do Git",
+    "path": "C:\\Users\\mario\\Documents\\Noviello-Produtividade\\.env",
+    "backup": "1Password ou Bitwarden — item 'Noviello Automação Local'"
+  },
+
+  "error_handling": {
+    "politica_retry": {
+      "tentativas": 3,
+      "backoff": "exponencial — 2s, 8s, 32s",
+      "aplicavel_a": ["5xx", "timeout de rede", "429 Meta", "429 LinkedIn"]
+    },
+    "alertas_email": {
+      "destino": "mario@noviello.adv.br",
+      "mecanismo": "Reply no próprio thread da peça (mantém contexto) + label Noviello-Aprovacao/_ERRO",
+      "gatilhos": [
+        "publicacao_falhou_apos_3_retries",
+        "token_meta_expirado",
+        "validacao_oab_205_falhou_na_stage_01",
+        "imagem_preview_indisponivel"
+      ],
+      "formato_subject": "[ERRO] {gatilho} — peca_id: {id}",
+      "formato_body": "Falha em {stage}. Detalhe: {erro_curto}. Log: {path}. Próxima tentativa manual via comando: python automacao\\manual_retry.py {peca_id}"
+    },
+    "circuit_breaker": {
+      "limite": "3 falhas consecutivas no mesmo canal",
+      "acao": "pausar canal por 1h e enviar email de alerta"
+    }
+  },
+
+  "observability": {
+    "log_estruturado": {
+      "formato": "JSONL",
+      "path": "C:\\Users\\mario\\Documents\\Noviello-Produtividade\\automacao\\logs\\{ano}-{mes}-publicacoes.jsonl",
+      "campos_minimos": ["timestamp", "peca_id", "stage", "status", "duracao_ms", "erro"]
+    },
+    "gmail_trail": "Threads do Gmail funcionam como audit trail nativo — toda peça tem thread completo de envio + decisão + confirmação + erros, persistido no Gmail por anos",
+    "metricas_semana": {
+      "geradas_em": "sexta 17h via scheduled task",
+      "campos": ["pecas_publicadas", "pecas_ajustadas", "pecas_falhadas", "tempo_medio_aprovacao_min", "taxa_aprovacao_primeira_tentativa"]
+    }
+  },
+
+  "idempotencia": {
+    "chave_principal": "peca_id",
+    "regra": "Se peca_id já existe em logs/_publicado/ OU thread com label _PUBLICADO existe no Gmail, NÃO republicar. Retornar PROOF anterior.",
+    "verificacao_dupla": "Antes de cada publicação, daemon verifica state.json local E busca Gmail label _PUBLICADO para a mesma peca_id"
+  },
+
+  "rollback": {
+    "ig": "Não há rollback automático — Mario deleta manualmente via app (Meta não permite delete por API após publicação).",
+    "linkedin": "DELETE /rest/posts/{urn} dentro de 24h",
+    "wordpress": "PATCH /posts/{id} com status=draft",
+    "linktree": "Manual",
+    "gmail_label_correction": "Se Mario movou para label errada, ele move de volta para Pendente — daemon detecta e reprocessa"
+  },
+
+  "fora_de_escopo": [
+    "Produção do HTML/JPG da peça — feito pelas skills do ecossistema (noviello-carrossel-creator, render-slide.py)",
+    "Geração da copy (legenda IG, post LI, artigo WP) — feito por noviello-copy-carrossel-engine + noviello-copywriter",
+    "Verificação OAB 205/2021 — feito por verificador-de-etica-oab-em-publicidade ANTES desse fluxo",
+    "Reels com avatar HeyGen — pipeline separado",
+    "Gestão de leads que chegam pelo Instagram — já tratado pelo CRM atual",
+    "Notificação push mobile fora do Gmail — Mario configura o app Gmail com notificação para emails com subject contendo '[Aprovar]'"
+  ],
+
+  "implementation_notes": {
+    "stack_recomendada": {
+      "opcao_a_python_local": {
+        "descricao": "Script Python persistente rodando como serviço Windows (NSSM) com filesystem watcher + Gmail poller.",
+        "libs_principais": [
+          "watchdog — filesystem events",
+          "google-api-python-client + google-auth-oauthlib — Gmail/Calendar",
+          "httpx — Meta/LinkedIn/WP",
+          "tenacity — retry",
+          "python-dotenv — secrets",
+          "structlog — logs JSONL"
+        ],
+        "componentes": [
+          "watcher.py — listener filesystem (trigger.peca_pronta)",
+          "gmail_poller.py — loop 30s lendo threads (trigger.gmail_polling)",
+          "publisher_ig.py, publisher_li.py, publisher_wp.py — clients de cada canal",
+          "state.py — persistência JSON local",
+          "main.py — orquestrador"
+        ],
+        "deploy": "NSSM cria serviço Windows que sobe automaticamente",
+        "vantagem_vs_v1": "Sem tunnel (Cloudflare removido), sem Z-API (zero custo), tudo Python + APIs Google que Mario já paga"
+      },
+      "opcao_b_n8n_local": {
+        "descricao": "n8n self-host em Docker Desktop com workflow visual.",
+        "vantagem": "Visual + retry built-in + nodes nativos Gmail/Sheets",
+        "desvantagem": "Docker no Windows é mais setup; nodes Meta/LinkedIn nem sempre estão atualizados",
+        "exportavel": "n8n exporta workflow para JSON — útil para versionar"
+      },
+      "opcao_c_zapier_make": {
+        "descricao": "SaaS no-code (Make.com ou Zapier).",
+        "vantagem": "Zero código, configuração visual, suporte nativo Gmail+Meta+LinkedIn+WP",
+        "desvantagem": "Custo recorrente Make Pro ~US$ 16/mês, Zapier ~US$ 30/mês; limites de execução; menos controle fino",
+        "viabilidade": "Boa para protótipo rápido; ruim para produção solo de longo prazo"
+      }
+    },
+    "recomendacao": "Opção A (Python + NSSM + Gmail API) — mais robusta, custo zero recorrente, controle total. Estimativa: ~10h dev + 3h testes ponta-a-ponta.",
+    "complexidade_vs_v1": "Reduzida em ~30%: removidos componentes de webhook handler, validação Z-API, gestão de tunnel. Adicionado polling Gmail (simples)."
+  },
+
+  "next_steps_para_implementar": [
+    "1. Criar projeto Google Cloud Console e habilitar Gmail API + Calendar API",
+    "2. Criar OAuth Desktop Client e rodar fluxo de consentimento UMA vez no Windows para obter refresh_token",
+    "3. Salvar refresh_token + client_id + client_secret no .env",
+    "4. Criar pasta C:\\Users\\mario\\Documents\\Noviello-Produtividade\\automacao\\{src, logs, state, templates}",
+    "5. Criar as 6 labels Gmail manualmente OU executar setup_labels.py uma vez",
+    "6. Configurar atalho de teclado Gmail (Settings > Keyboard shortcuts) e Mario decora o atalho de label",
+    "7. Implementar daemon Python (opção A) seguindo a estrutura de componentes",
+    "8. Testar end-to-end em modo 'dry-run' (IG publica em conta de teste, WP draft, LI rascunho)",
+    "9. Instalar como serviço Windows: nssm install NovielloAutomacao",
+    "10. Adicionar entrada no Linktree manual para o último artigo (até automação Linktree estar pronta)"
+  ],
+
+  "fluxo_de_uso_diario_do_mario": {
+    "descricao": "Como Mario vai usar isso depois de implementado.",
+    "passos": [
+      "1. Mario acorda. Abre Gmail (mobile ou desktop).",
+      "2. Vê email '[Aprovar] Direito Imobiliário — 4 certidões inegociáveis' na inbox.",
+      "3. Abre o email. Vê a arte (preview) e a legenda completa.",
+      "4. Decide:",
+      "   a) Está bom → aplica label '_APROVADO' (mobile: swipe; desktop: atalho 'l' + nome). Pronto.",
+      "   b) Precisa ajustar → aplica label '_AJUSTAR' + responde com o ajuste. Pronto.",
+      "   c) Quer mudar a data → aplica label '_REAGENDAR'. Daemon responde com opções.",
+      "5. Tempo total de Mario por peça: 15-30 segundos para aprovação simples."
+    ]
+  },
+
+  "links_para_skills_do_ecossistema_que_alimentam_este_fluxo": [
+    "noviello-marketing-creator",
+    "noviello-copy-carrossel-engine",
+    "noviello-carrossel-creator",
+    "verificador-de-etica-oab-em-publicidade",
+    "noviello-publisher-instagram",
+    "noviello-voz-padrao"
+  ]
+}

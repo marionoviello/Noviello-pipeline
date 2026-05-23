@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Painel de Aprovação — Noviello</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --claret:#68192E; --chocolate:#540D1D; --creme:#FAF7F5;
+    --anti:#F1F3F2; --texto:#281019; --cinza:#5A4650; --gold:#D4AF37;
+    --verde:#2E7D4F;
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--anti); color:var(--texto);
+    font-family:'Poppins',system-ui,sans-serif; font-size:16px; line-height:1.6;
+  }
+  header {
+    background:var(--claret); color:#fff; padding:28px 40px;
+  }
+  header h1 {
+    font-family:'Cinzel',serif; font-weight:700; font-size:26px; margin:0;
+    letter-spacing:1px;
+  }
+  header p { margin:4px 0 0; font-size:13px; opacity:.85; }
+  main { max-width:880px; margin:0 auto; padding:32px 24px 60px; }
+  h2 {
+    font-family:'Cinzel',serif; color:var(--claret); font-size:20px;
+    text-transform:uppercase; letter-spacing:1px; margin:36px 0 16px;
+    border-bottom:1px solid var(--claret); padding-bottom:8px;
+  }
+  .vazio {
+    text-align:center; color:var(--cinza); padding:60px 20px; font-size:18px;
+  }
+  .card {
+    background:#fff; border-radius:6px; padding:26px 28px; margin:0 0 22px;
+    box-shadow:0 2px 16px rgba(104,25,46,.07);
+  }
+  .card .tit {
+    font-family:'Cinzel',serif; font-weight:600; color:var(--claret);
+    font-size:18px; margin:0 0 14px;
+  }
+  .rotulo {
+    font-size:11px; text-transform:uppercase; letter-spacing:1px;
+    color:var(--claret); margin:18px 0 6px;
+  }
+  .slide {
+    border-left:3px solid var(--gold); padding:4px 0 4px 14px; margin:0 0 12px;
+  }
+  .slide b { color:var(--chocolate); }
+  .artes { display:flex; flex-wrap:wrap; gap:8px; }
+  .artes img {
+    width:128px; height:160px; object-fit:cover; border-radius:4px;
+    border:1px solid var(--anti);
+  }
+  .texto-bloco {
+    background:var(--creme); border-radius:4px; padding:12px 14px;
+    white-space:pre-wrap; font-size:14px;
+  }
+  form { margin-top:20px; }
+  textarea {
+    width:100%; min-height:60px; border:1px solid #d8d2cf; border-radius:4px;
+    padding:10px; font-family:'Poppins',sans-serif; font-size:14px; resize:vertical;
+  }
+  .botoes { display:flex; gap:12px; margin-top:12px; }
+  button {
+    flex:1; padding:16px; border:none; border-radius:5px; cursor:pointer;
+    font-family:'Poppins',sans-serif; font-weight:600; font-size:16px;
+  }
+  .b-aprovar { background:var(--verde); color:#fff; }
+  .b-ajustar { background:#fff; color:var(--claret); border:2px solid var(--claret); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Painel de Aprovação</h1>
+  <p>Noviello Advocacia · revise e decida cada peça com um clique</p>
+</header>
+<main>
+
+  {% if not copy and not final %}
+    <div class="vazio">Nada pendente. Tudo em dia.</div>
+  {% endif %}
+
+  {% if copy %}
+    <h2>Revisar copy ({{ copy|length }})</h2>
+    {% for item in copy %}
+    <div class="card">
+      <div class="tit">{{ item.titulo }}</div>
+      <div class="rotulo">Carrossel — {{ item.slides|length }} slides</div>
+      {% for s in item.slides %}
+        <div class="slide"><b>{{ loop.index }}. {{ s.titulo }}</b><br>{{ s.corpo }}</div>
+      {% endfor %}
+      <div class="rotulo">Legenda</div>
+      <div class="texto-bloco">{{ item.legenda }}
+{{ item.hashtags|join(' ') }}</div>
+      <div class="rotulo">Post LinkedIn</div>
+      <div class="texto-bloco">{{ item.linkedin }}</div>
+      <form method="post" action="/decidir">
+        <input type="hidden" name="tipo" value="copy">
+        <input type="hidden" name="peca_id" value="{{ item.id }}">
+        <textarea name="ajuste_texto" placeholder="Para ajustar: descreva o que mudar (a copy será regerada)"></textarea>
+        <div class="botoes">
+          <button type="submit" name="decisao" value="aprovar" class="b-aprovar">Aprovar copy</button>
+          <button type="submit" name="decisao" value="ajustar" class="b-ajustar">Ajustar</button>
+        </div>
+      </form>
+    </div>
+    {% endfor %}
+  {% endif %}
+
+  {% if final %}
+    <h2>Aprovar peça ({{ final|length }})</h2>
+    {% for item in final %}
+    <div class="card">
+      <div class="tit">{{ item.titulo }}</div>
+      <div class="rotulo">Carrossel</div>
+      <div class="artes">
+        {% for slide in item.slides_arts %}
+          <img src="/arte/{{ item.id }}/{{ slide }}" alt="slide">
+        {% endfor %}
+      </div>
+      <div class="rotulo">Legenda</div>
+      <div class="texto-bloco">{{ item.legenda }}</div>
+      <div class="rotulo">Post LinkedIn</div>
+      <div class="texto-bloco">{{ item.linkedin }}</div>
+      <form method="post" action="/decidir">
+        <input type="hidden" name="tipo" value="final">
+        <input type="hidden" name="peca_id" value="{{ item.id }}">
+        <textarea name="ajuste_texto" placeholder="Para ajustar: descreva o que mudar"></textarea>
+        <div class="botoes">
+          <button type="submit" name="decisao" value="aprovar" class="b-aprovar">Aprovar e publicar</button>
+          <button type="submit" name="decisao" value="ajustar" class="b-ajustar">Ajustar</button>
+        </div>
+      </form>
+    </div>
+    {% endfor %}
+  {% endif %}
+
+</main>
+</body>
+</html>

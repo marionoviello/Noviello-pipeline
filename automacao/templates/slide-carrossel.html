@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  html, body { width: 1080px; height: 1350px; margin: 0; padding: 0; }
+  * { box-sizing: border-box; }
+
+  /* ===== Slide base ===== */
+  .slide {
+    width: 1080px; height: 1350px;
+    padding: 96px 88px;
+    display: flex; flex-direction: column;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* ===== Tema CLARO (default) ===== */
+  .slide.claro { background: #FAF7F5; }
+  .slide.claro .topo,
+  .slide.claro .topo .num { color: #68192E; }
+  .slide.claro .topo .num { border-color: #68192E; }
+  .slide.claro .titulo { color: #68192E; }
+  .slide.claro .corpo { color: #281019; }
+  .slide.claro .rodape {
+    color: #5A4650;
+    border-top: 1px solid rgba(104,25,46,0.18);
+  }
+
+  /* ===== Tema ESCURO ===== */
+  .slide.escuro { background: #68192E; }
+  .slide.escuro .topo,
+  .slide.escuro .topo .num { color: #FAF7F5; }
+  .slide.escuro .topo .num { border-color: #FAF7F5; }
+  .slide.escuro .topo .logo { filter: brightness(0) invert(1); opacity: 0.96; }
+  .slide.escuro .titulo { color: #FAF7F5; }
+  .slide.escuro .corpo { color: #F1E8E4; }
+  .slide.escuro .rodape {
+    color: #F1E8E4;
+    border-top: 1px solid rgba(250,247,245,0.28);
+  }
+
+  /* ===== Tema FOTO-FULLBLEED (capa/CTA — foto cobrindo tudo) =====
+     A imagem vai como background-image inline; overlay claret forte para
+     legibilidade do texto. Tipografia em creme. */
+  .slide.foto-fullbleed {
+    background-size: cover; background-position: center;
+    background-repeat: no-repeat;
+  }
+  .slide.foto-fullbleed::before {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(180deg, rgba(104,25,46,0.55) 0%, rgba(104,25,46,0.88) 100%);
+    z-index: 0;
+  }
+  .slide.foto-fullbleed > * { position: relative; z-index: 1; }
+  .slide.foto-fullbleed .topo,
+  .slide.foto-fullbleed .topo .num { color: #FAF7F5; }
+  .slide.foto-fullbleed .topo .num { border-color: #FAF7F5; }
+  .slide.foto-fullbleed .topo .logo { filter: brightness(0) invert(1); opacity: 0.96; }
+  .slide.foto-fullbleed .titulo { color: #FAF7F5; font-size: 88px; line-height: 1.12; }
+  .slide.foto-fullbleed .corpo { color: #F1E8E4; font-size: 38px; }
+  .slide.foto-fullbleed .rodape {
+    color: #F1E8E4;
+    border-top: 1px solid rgba(250,247,245,0.34);
+  }
+
+  /* ===== Tema FOTO-FUNDO (foto blur ao fundo + overlay creme leve) =====
+     Mais sutil — a foto aparece como ambiente, texto em claret legivel. */
+  .slide.foto-fundo {
+    background-size: cover; background-position: center;
+    background-repeat: no-repeat;
+  }
+  .slide.foto-fundo::before {
+    content: ''; position: absolute; inset: 0;
+    background: rgba(250,247,245,0.91);
+    backdrop-filter: blur(2px);
+    z-index: 0;
+  }
+  .slide.foto-fundo > * { position: relative; z-index: 1; }
+  .slide.foto-fundo .topo,
+  .slide.foto-fundo .topo .num { color: #68192E; }
+  .slide.foto-fundo .topo .num { border-color: #68192E; }
+  .slide.foto-fundo .titulo { color: #68192E; }
+  .slide.foto-fundo .corpo { color: #281019; }
+  .slide.foto-fundo .rodape {
+    color: #5A4650;
+    border-top: 1px solid rgba(104,25,46,0.18);
+  }
+
+  /* ===== Tema DADOS (numero/percentual gigante como protagonista) =====
+     Use quando o titulo do slide e um numero, percentual, data ou cifra.
+     Ex.: "90 dias", "27,5%", "EC 132/2023", "R$ 240 mil/ano".
+     Variantes: .slide.dados (claro) | .slide.dados.escuro */
+  .slide.dados { background: #FAF7F5; }
+  .slide.dados .corpo-wrap {
+    align-items: center; text-align: center;
+  }
+  .slide.dados .regua { margin: 0 auto 50px; width: 120px; height: 6px; }
+  .slide.dados .titulo {
+    font-size: 200px; line-height: 1.0;
+    color: #68192E;
+    text-align: center;
+    margin: 0 0 50px;
+  }
+  .slide.dados .corpo {
+    font-size: 38px;
+    color: #281019;
+    text-align: center;
+    max-width: 850px;
+    margin: 0 auto;
+  }
+  .slide.dados .topo,
+  .slide.dados .topo .num { color: #68192E; }
+  .slide.dados .topo .num { border-color: #68192E; }
+  .slide.dados .rodape {
+    color: #5A4650;
+    border-top: 1px solid rgba(104,25,46,0.18);
+  }
+
+  /* Variante DADOS escuro */
+  .slide.dados.escuro { background: #68192E; }
+  .slide.dados.escuro .titulo { color: #FAF7F5; }
+  .slide.dados.escuro .corpo { color: #F1E8E4; }
+  .slide.dados.escuro .topo,
+  .slide.dados.escuro .topo .num { color: #FAF7F5; }
+  .slide.dados.escuro .topo .num { border-color: #FAF7F5; }
+  .slide.dados.escuro .topo .logo { filter: brightness(0) invert(1); opacity: 0.96; }
+  .slide.dados.escuro .rodape {
+    color: #F1E8E4;
+    border-top: 1px solid rgba(250,247,245,0.28);
+  }
+
+  /* ===== Tema QUOTE (citacao destacada, fonte serif italica) =====
+     Use para citar artigos de lei, decisoes do STJ/STF, frases-chave.
+     Titulo = texto da citacao. Corpo = atribuicao (autor/fonte). */
+  .slide.quote { background: #FAF7F5; }
+  .slide.quote .corpo-wrap {
+    position: relative;
+    justify-content: center;
+  }
+  .slide.quote .corpo-wrap::before {
+    content: "\201C";  /* aspa esquerda tipografica */
+    font-family: 'Cinzel', serif;
+    font-size: 280px;
+    color: #D4AF37;
+    position: absolute;
+    top: -60px; left: -40px;
+    line-height: 1;
+    opacity: 0.55;
+    z-index: 0;
+  }
+  .slide.quote .regua { background: #D4AF37; width: 80px; }
+  .slide.quote .titulo {
+    font-family: 'Cinzel', serif;
+    font-style: italic;
+    font-weight: 600;
+    font-size: 54px;
+    line-height: 1.36;
+    color: #281019;
+    margin: 0 0 40px;
+    position: relative; z-index: 1;
+  }
+  .slide.quote .corpo {
+    font-family: 'Poppins', sans-serif;
+    font-size: 28px;
+    font-weight: 600;
+    color: #68192E;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    position: relative; z-index: 1;
+  }
+  .slide.quote .topo,
+  .slide.quote .topo .num { color: #68192E; }
+  .slide.quote .topo .num { border-color: #68192E; }
+  .slide.quote .rodape {
+    color: #5A4650;
+    border-top: 1px solid rgba(104,25,46,0.18);
+  }
+
+  /* ===== Tema MARCA-DAGUA (logo gigante translucido ao fundo) =====
+     Variantes: .slide.marca-dagua (claro) | .slide.marca-dagua.escuro
+     Conteudo normal aparece sobre o logo de fundo. */
+  .slide.marca-dagua { background: #FAF7F5; }
+  .slide.marca-dagua .watermark {
+    display: block;
+    position: absolute;
+    width: 850px; height: auto;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    opacity: 0.07;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .slide.marca-dagua > *:not(.watermark) { position: relative; z-index: 1; }
+  .slide.marca-dagua .topo,
+  .slide.marca-dagua .topo .num { color: #68192E; }
+  .slide.marca-dagua .topo .num { border-color: #68192E; }
+  .slide.marca-dagua .titulo { color: #68192E; }
+  .slide.marca-dagua .corpo { color: #281019; }
+  .slide.marca-dagua .rodape {
+    color: #5A4650;
+    border-top: 1px solid rgba(104,25,46,0.18);
+  }
+
+  /* Variante MARCA-DAGUA escuro */
+  .slide.marca-dagua.escuro { background: #68192E; }
+  .slide.marca-dagua.escuro .watermark { filter: brightness(0) invert(1); opacity: 0.1; }
+  .slide.marca-dagua.escuro .topo,
+  .slide.marca-dagua.escuro .topo .num { color: #FAF7F5; }
+  .slide.marca-dagua.escuro .topo .num { border-color: #FAF7F5; }
+  .slide.marca-dagua.escuro .topo .logo { filter: brightness(0) invert(1); opacity: 0.96; }
+  .slide.marca-dagua.escuro .titulo { color: #FAF7F5; }
+  .slide.marca-dagua.escuro .corpo { color: #F1E8E4; }
+  .slide.marca-dagua.escuro .rodape {
+    color: #F1E8E4;
+    border-top: 1px solid rgba(250,247,245,0.28);
+  }
+
+  /* ===== Tema LOGO-HERO (slide institucional, logo gigante centralizado) =====
+     Para slides de pausa/transicao ou capa institucional. Sem texto principal —
+     mostra apenas o logo grande e uma tagline curta opcional (titulo curto). */
+  .slide.logo-hero {
+    background: #FAF7F5;
+    align-items: center; justify-content: center;
+    text-align: center;
+  }
+  .slide.logo-hero .watermark {
+    display: block;
+    position: static;
+    width: 540px; height: auto;
+    margin: 0 auto 30px;
+    opacity: 1;
+  }
+  /* Esconde topo padrao — o logo gigante e o protagonista */
+  .slide.logo-hero .topo {
+    position: absolute; top: 96px; right: 88px; left: auto; width: auto;
+  }
+  .slide.logo-hero .topo .logo { display: none; }  /* esconde o logo pequeno */
+  .slide.logo-hero .corpo-wrap {
+    flex: none;
+    align-items: center; text-align: center;
+  }
+  .slide.logo-hero .regua { display: none; }
+  .slide.logo-hero .titulo {
+    font-family: 'Cinzel', serif; font-weight: 600;
+    font-size: 40px; letter-spacing: 2px;
+    color: #68192E;
+    text-transform: uppercase;
+    margin: 0 0 16px;
+    text-align: center;
+  }
+  .slide.logo-hero .corpo {
+    font-family: 'Poppins', sans-serif; font-weight: 400;
+    font-size: 28px;
+    color: #5A4650;
+    text-align: center;
+    max-width: 700px;
+  }
+  .slide.logo-hero .topo .num { color: #68192E; border-color: #68192E; }
+  .slide.logo-hero .rodape {
+    color: #5A4650;
+    border-top: 1px solid rgba(104,25,46,0.18);
+  }
+
+  /* Por padrao o logo-grande (.watermark) fica escondido — so aparece em
+     variantes que pedem (marca-dagua, logo-hero). */
+  .watermark { display: none; }
+
+  /* ===== Tipografia (compartilhada) ===== */
+  .topo {
+    display: flex; justify-content: space-between; align-items: center;
+    font-family: 'Poppins', sans-serif; font-size: 26px; font-weight: 500;
+    letter-spacing: 1px;
+  }
+  .topo .logo { height: 110px; width: auto; display: block; }
+  .topo .num {
+    border: 2px solid; border-radius: 999px;
+    padding: 6px 20px; font-size: 22px;
+  }
+  .corpo-wrap {
+    flex: 1; display: flex; flex-direction: column; justify-content: center;
+  }
+  .titulo {
+    font-family: 'Cinzel', serif; font-weight: 700;
+    font-size: 72px; line-height: 1.22;
+    margin: 0 0 42px;
+  }
+  .corpo {
+    font-family: 'Poppins', sans-serif; font-weight: 400;
+    font-size: 42px; line-height: 1.55;
+    margin: 0;
+  }
+  .regua { width: 90px; height: 5px; background: #D4AF37; margin: 0 0 40px; }
+  .rodape {
+    font-family: 'Poppins', sans-serif; font-size: 24px; font-weight: 500;
+    letter-spacing: 1px; padding-top: 24px;
+  }
+</style>
+</head>
+<body>
+<div class="slide {tema}" style="{bg_style}">
+  <img class="watermark" src="{logo}" alt="">
+  <div class="topo">
+    <img class="logo" src="{logo}" alt="Noviello Advocacia">
+    <span class="num">{numero} / {total}</span>
+  </div>
+  <div class="corpo-wrap">
+    <div class="regua"></div>
+    <h1 class="titulo">{titulo}</h1>
+    <p class="corpo">{corpo}</p>
+  </div>
+  <div class="rodape">@novielloadv &middot; noviello.adv.br</div>
+</div>
+</body>
+</html>
