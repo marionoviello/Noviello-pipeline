@@ -71,6 +71,24 @@
   }
   .b-aprovar { background:var(--verde); color:#fff; }
   .b-ajustar { background:#fff; color:var(--claret); border:2px solid var(--claret); }
+
+  .cadencia-card { background:#FAF7F5; border-left:4px solid var(--claret); }
+  .cadencia-header { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+  .cadencia-titulo { font-size:14px; margin-top:4px; }
+  .cad-badge { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:1px; }
+  .cad-on { background:#4A7B5C; color:#fff; }
+  .cad-pausa { background:#D4AF37; color:#281019; }
+  .cad-off { background:#999; color:#fff; }
+  .cad-meta { color:#5A4650; font-size:12px; }
+  .cadencia-meta-linha { margin-top:8px; font-size:12px; color:#5A4650; }
+  .cadencia-meta-linha code { background:#fff; padding:1px 6px; border-radius:3px; font-size:11px; }
+  .cad-toggle { margin:0; }
+  .btn-toggle { background:#fff; color:var(--claret); border:1px solid var(--claret); border-radius:6px; padding:8px 16px; font-family:'Poppins',sans-serif; font-weight:600; font-size:13px; cursor:pointer; }
+  .btn-toggle:hover { background:var(--claret); color:#fff; }
+  .cadencia-historico { margin-top:12px; font-size:13px; }
+  .cadencia-historico summary { cursor:pointer; color:var(--claret); font-weight:600; }
+  .cadencia-historico ul { margin:8px 0 0; padding-left:20px; }
+  .cadencia-historico li { margin-bottom:4px; }
 </style>
 </head>
 <body>
@@ -79,6 +97,50 @@
   <p>Noviello Advocacia · revise e decida cada peça com um clique</p>
 </header>
 <main>
+
+  {% if cadencia %}
+  <div class="card cadencia-card">
+    <div class="cadencia-header">
+      <div>
+        <div class="rotulo">Cadência semanal automática</div>
+        <div class="cadencia-titulo">
+          {% if not cadencia.ativa_env %}
+            <span class="cad-badge cad-off">Desativada (.env)</span>
+          {% elif cadencia.ativa_painel %}
+            <span class="cad-badge cad-on">Ativa</span>
+          {% else %}
+            <span class="cad-badge cad-pausa">Pausada</span>
+          {% endif %}
+          &nbsp; · &nbsp;
+          <span class="cad-meta">{{ cadencia.calendario }} · janela {{ cadencia.janela_horas }}h · {{ cadencia.total_promovidos }} promovidos</span>
+        </div>
+      </div>
+      {% if cadencia.ativa_env %}
+      <form method="post" action="/cadencia/toggle" class="cad-toggle">
+        <input type="hidden" name="ativa" value="{{ 'false' if cadencia.ativa_painel else 'true' }}">
+        <button class="btn-toggle">
+          {{ 'Pausar cadência' if cadencia.ativa_painel else 'Retomar cadência' }}
+        </button>
+      </form>
+      {% endif %}
+    </div>
+    <div class="cadencia-meta-linha">
+      Filtro: <code>{{ cadencia.filtro_titulo }}</code> &nbsp;·&nbsp;
+      Backlog: <code>{{ cadencia.categoria_backlog }}</code> &nbsp;·&nbsp;
+      Último ciclo: <code>{{ cadencia.ultimo_run }}</code>
+    </div>
+    {% if cadencia.historico %}
+    <details class="cadencia-historico">
+      <summary>Últimas {{ cadencia.historico|length }} promoções</summary>
+      <ul>
+        {% for h in cadencia.historico %}
+        <li><b>{{ h.post_titulo }}</b> <span class="cad-meta">(post {{ h.post_id }}) — {{ h.titulo_evento }} em {{ h.data_evento_iso[:10] }}</span></li>
+        {% endfor %}
+      </ul>
+    </details>
+    {% endif %}
+  </div>
+  {% endif %}
 
   {% if not copy and not final %}
     <div class="vazio">Nada pendente. Tudo em dia.</div>

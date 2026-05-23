@@ -87,6 +87,13 @@ class Config:
     # o producer roda com brief-marca.txt apenas (comportamento legado).
     skills_dir: Path | None = None
 
+    # Cadencia semanal automatica (Batch 5)
+    cadencia_ativa: bool = True  # kill switch via .env (override do estado do painel)
+    cadencia_calendario: str = "Noviello — Marketing"
+    cadencia_filtro_titulo: str = "[NOV-BLOG] Publicação WordPress"
+    cadencia_janela_horas: int = 48
+    wp_categoria_backlog: str = "Backlog Editorial"
+
     def channel_enabled(self, canal: str) -> bool:
         return canal in self.enabled_channels
 
@@ -169,6 +176,11 @@ def load_config() -> Config:
         },
         wp_categoria_fila_social=_get("WP_CATEGORIA_FILA_SOCIAL", "Fila Social"),
         skills_dir=Path(_get("NOVIELLO_SKILLS_DIR")) if _get("NOVIELLO_SKILLS_DIR") else _default_skills_dir(),
+        cadencia_ativa=_bool(_get("CADENCIA_ATIVA", "true")),
+        cadencia_calendario=_get("CADENCIA_CALENDARIO", "Noviello — Marketing"),
+        cadencia_filtro_titulo=_get("CADENCIA_FILTRO_TITULO", "[NOV-BLOG] Publicação WordPress"),
+        cadencia_janela_horas=int(_get("CADENCIA_JANELA_HORAS", "48") or "48"),
+        wp_categoria_backlog=_get("WP_CATEGORIA_BACKLOG", "Backlog Editorial"),
     )
 
     # garante que as pastas de trabalho existem

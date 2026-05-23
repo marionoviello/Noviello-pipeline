@@ -21,6 +21,7 @@ from flask import (
     url_for,
 )
 
+from src.cadencia_state import CadenciaState
 from src.config import load_config
 from src.manifest import carregar_manifest
 from src.producer_state import EstadoProd, ProducaoStore
@@ -83,6 +84,37 @@ def registrar_decisao(cfg, tipo: str, peca_id: str, decisao: str, ajuste_texto: 
     store.save(est)
 
 
+def status_cadencia(cfg) -> dict:
+    """Resumo do estado da cadencia para o painel."""
+    state = CadenciaState.carregar(cfg.state_dir)
+    # ordena as ultimas 5 promocoes por promovido_em (mais recente primeiro)
+    historico = sorted(
+        (
+            {"event_id": eid, **dados}
+            for eid, dados in (state.eventos_promovidos or {}).items()
+        ),
+        key=lambda x: x.get("promovido_em_iso", ""),
+        reverse=True,
+    )[:5]
+    return {
+        "ativa_painel": state.ativa,
+        "ativa_env": cfg.cadencia_ativa,
+        "ultimo_run": state.ultimo_run_iso or "(nunca)",
+        "calendario": cfg.cadencia_calendario,
+        "janela_horas": cfg.cadencia_janela_horas,
+        "filtro_titulo": cfg.cadencia_filtro_titulo,
+        "categoria_backlog": cfg.wp_categoria_backlog,
+        "total_promovidos": len(state.eventos_promovidos or {}),
+        "historico": historico,
+    }
+
+
+def alternar_cadencia(cfg, ativa: bool) -> None:
+    state = CadenciaState.carregar(cfg.state_dir)
+    state.ativa = bool(ativa)
+    state.salvar(cfg.state_dir)
+
+
 def _pasta_da_peca(cfg, peca_id: str) -> Path | None:
     """Pasta onde estao os JPGs de uma peca em aprovacao final."""
     store = StateStore(cfg.state_dir)
@@ -97,8 +129,17 @@ def criar_app(cfg) -> Flask:
     @app.get("/")
     def index():
         return render_template(
-            "painel.html", painel_url=PAINEL_URL, **listar_pendencias(cfg)
+            "painel.html",
+            painel_url=PAINEL_URL,
+            cadencia=status_cadencia(cfg),
+            **listar_pendencias(cfg),
         )
+
+    @app.post("/cadencia/toggle")
+    def cadencia_toggle():
+        nova = request.form.get("ativa", "false").lower() in {"1", "true", "yes", "on"}
+        alternar_cadencia(cfg, nova)
+        return redirect(url_for("index"))
 
     @app.get("/arte/<peca_id>/<arquivo>")
     def arte(peca_id: str, arquivo: str):

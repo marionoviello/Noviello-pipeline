@@ -39,20 +39,63 @@ class WordPressSource:
         self._wp = wp_client
         self._categoria_nome = categoria_nome
         self._categoria_id: int | None = None
+        # cache id por nome (para resolver_categoria generico)
+        self._cache_ids: dict[str, int] = {}
 
     def categoria_id(self) -> int:
         """ID da categoria "Fila Social" (resolvido uma vez, em cache)."""
         if self._categoria_id is None:
-            for cat in self._wp.get_categories(SITE, self._categoria_nome):
-                if cat.get("name", "").strip().lower() == self._categoria_nome.strip().lower():
-                    self._categoria_id = cat["id"]
-                    break
-            if self._categoria_id is None:
-                raise CategoriaNaoEncontrada(
-                    f"categoria '{self._categoria_nome}' nao existe em {SITE}.adv.br — "
-                    "crie-a no wp-admin."
-                )
+            self._categoria_id = self.resolver_categoria(self._categoria_nome)
         return self._categoria_id
+
+    def resolver_categoria(self, nome: str) -> int:
+        """Resolve ID de uma categoria pelo nome (cache por nome)."""
+        chave = nome.strip().lower()
+        if chave in self._cache_ids:
+            return self._cache_ids[chave]
+        for cat in self._wp.get_categories(SITE, nome):
+            if cat.get("name", "").strip().lower() == chave:
+                self._cache_ids[chave] = cat["id"]
+                return cat["id"]
+        raise CategoriaNaoEncontrada(
+            f"categoria '{nome}' nao existe em {SITE}.adv.br — crie-a no wp-admin."
+        )
+
+    def listar_backlog(self, categoria_nome: str) -> list[ArtigoFonte]:
+        """Lista rascunhos da categoria 'Backlog Editorial' (ou outra).
+
+        Ordenado FIFO: mais antigo primeiro (orderby=date, order=asc). Versao leve
+        do listar_fila_social — sem batch enrichment (cadencia so precisa de
+        post_id, titulo, slug, status).
+        """
+        cat_id = self.resolver_categoria(categoria_nome)
+        posts = self._wp.get_posts(
+            SITE,
+            {
+                "categories": cat_id,
+                "status": "draft,pending",
+                "per_page": 50,
+                "context": "edit",
+                "orderby": "date",
+                "order": "asc",  # mais antigo primeiro
+                "_fields": "id,title,slug,categories,status",
+            },
+        )
+        artigos = []
+        for p in posts:
+            titulo = p.get("title", {})
+            titulo = titulo.get("raw") or titulo.get("rendered", "")
+            artigos.append(
+                ArtigoFonte(
+                    post_id=p["id"],
+                    titulo=_html.unescape(titulo),
+                    slug=p.get("slug", ""),
+                    conteudo_html="",  # nao precisamos pra cadencia
+                    categorias=p.get("categories", []),
+                    status=p.get("status", ""),
+                )
+            )
+        return artigos
 
     def listar_fila_social(self) -> list[ArtigoFonte]:
         """Artigos na categoria Fila Social, ainda nao publicados.

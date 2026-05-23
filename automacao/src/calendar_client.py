@@ -5,6 +5,8 @@ Stage 08 (enriquecimento). Falha aqui nao e critica: o pipeline registra e segue
 
 from __future__ import annotations
 
+import datetime as _dt
+
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
@@ -57,6 +59,56 @@ class CalendarClient:
         self._svc.events().patch(
             calendarId=calendar_id, eventId=event_id, body={"description": descricao}
         ).execute()
+
+    @_retry
+    def listar_eventos_futuros(
+        self,
+        calendar_nome: str,
+        janela_horas: int,
+        filtro_titulo: str = "",
+    ) -> list[dict]:
+        """Lista eventos do calendario dentro da janela [agora, agora+janela_horas].
+
+        Se filtro_titulo for fornecido, devolve apenas eventos cujo summary
+        contem essa string (case-insensitive). Eventos sao ordenados por data.
+
+        Retorna lista de dicts com chaves: id, summary, start_iso, end_iso.
+        """
+        cal_id = self.resolver_calendar_id(calendar_nome)
+        if not cal_id:
+            return []
+
+        agora = _dt.datetime.now(_dt.timezone.utc)
+        fim = agora + _dt.timedelta(hours=janela_horas)
+        resp = (
+            self._svc.events()
+            .list(
+                calendarId=cal_id,
+                timeMin=agora.isoformat(),
+                timeMax=fim.isoformat(),
+                singleEvents=True,
+                orderBy="startTime",
+                maxResults=100,
+            )
+            .execute()
+        )
+        eventos: list[dict] = []
+        filtro_lower = filtro_titulo.strip().lower()
+        for e in resp.get("items", []):
+            summary = e.get("summary", "")
+            if filtro_lower and filtro_lower not in summary.lower():
+                continue
+            inicio = e.get("start", {})
+            fim_e = e.get("end", {})
+            eventos.append(
+                {
+                    "id": e["id"],
+                    "summary": summary,
+                    "start_iso": inicio.get("dateTime") or inicio.get("date", ""),
+                    "end_iso": fim_e.get("dateTime") or fim_e.get("date", ""),
+                }
+            )
+        return eventos
 
     def registrar_publicacao(self, calendar_nome: str, peca, urls: dict, publicado_em: str) -> bool:
         """Acha o evento da peca e anexa as URLs publicadas na descricao.
