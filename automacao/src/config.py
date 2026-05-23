@@ -94,6 +94,10 @@ class Config:
     cadencia_janela_horas: int = 48
     wp_categoria_backlog: str = "Backlog Editorial"
 
+    # Geracao de hero do artigo via Gemini (opt-in)
+    auto_gerar_hero: bool = False
+    google_ai_api_key: str = ""
+
     def channel_enabled(self, canal: str) -> bool:
         return canal in self.enabled_channels
 
@@ -181,6 +185,8 @@ def load_config() -> Config:
         cadencia_filtro_titulo=_get("CADENCIA_FILTRO_TITULO", "[NOV-BLOG] Publicação WordPress"),
         cadencia_janela_horas=int(_get("CADENCIA_JANELA_HORAS", "48") or "48"),
         wp_categoria_backlog=_get("WP_CATEGORIA_BACKLOG", "Backlog Editorial"),
+        auto_gerar_hero=_bool(_get("AUTO_GERAR_HERO", "false")),
+        google_ai_api_key=_get("GOOGLE_AI_API_KEY"),
     )
 
     # garante que as pastas de trabalho existem

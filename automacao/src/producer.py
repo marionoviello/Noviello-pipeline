@@ -18,6 +18,7 @@ import time
 
 from src import ai_tells_detector, article_styler, carousel_render
 from src.anthropic_client import AnthropicClient
+from src.image_gen import GeradorImagens, ImagemGenError
 from src.config import load_config
 from src.emails import build_ping_email
 from src.gmail_client import GmailClient
@@ -66,6 +67,61 @@ def _render_script(cfg):
     return cfg.project_root / "scripts" / "render-slide.py"
 
 
+def _gerar_e_anexar_hero(
+    estado, cfg, wp_client, logger,
+) -> None:
+    """Se artigo nao tem featured_media e AUTO_GERAR_HERO=true, gera hero
+    via Gemini, faz upload no WP, atualiza featured_media do post e popula
+    estado.featured_media_id + imagem_destaque_url.
+
+    Falha silenciosa: logger.info e segue (geracao de hero nao deve bloquear).
+    """
+    if estado.featured_media_id:
+        return  # ja tem
+    if not cfg.auto_gerar_hero:
+        return
+    if not cfg.google_ai_api_key:
+        log_stage(logger, estado.post_id, "producao.etapaA",
+                  "auto_hero_skip_sem_chave", motivo="GOOGLE_AI_API_KEY ausente")
+        return
+
+    pasta = _pasta_peca(cfg, estado.post_id)
+    pasta.mkdir(parents=True, exist_ok=True)
+
+    try:
+        # ja temos lead extraido via styler — recupera do html ou usa titulo
+        lead_aprox = (estado.artigo_texto or "")[:300]
+        gerador = GeradorImagens(cfg.google_ai_api_key)
+        path_local = gerador.gerar_hero_artigo(
+            titulo=estado.titulo,
+            lead=lead_aprox,
+            categorias=estado.categorias_nomes or [],
+            pasta_destino=pasta,
+            nome_arquivo="hero.png",
+        )
+    except ImagemGenError as exc:
+        log_stage(logger, estado.post_id, "producao.etapaA",
+                  "auto_hero_falhou", erro=str(exc))
+        return
+    except Exception as exc:  # noqa: BLE001
+        log_stage(logger, estado.post_id, "producao.etapaA",
+                  "auto_hero_erro", erro=str(exc))
+        return
+
+    # upload pro WP
+    try:
+        midia = wp_client.upload_media(path_local, "noviello")
+        # seta featured_media no post original
+        wp_client.update_post("noviello", estado.post_id, {"featured_media": midia["id"]})
+        estado.featured_media_id = midia["id"]
+        estado.imagem_destaque_url = midia["source_url"]
+        log_stage(logger, estado.post_id, "producao.etapaA",
+                  "auto_hero_ok", media_id=midia["id"])
+    except Exception as exc:  # noqa: BLE001
+        log_stage(logger, estado.post_id, "producao.etapaA",
+                  "auto_hero_upload_falhou", erro=str(exc))
+
+
 def _ping(cfg, gmail, post_id, logger) -> None:
     try:
         gmail.send_message(build_ping_email(1, PAINEL_URL, cfg.email_aprovador))
@@ -81,6 +137,7 @@ def processar_artigo_novo(
     categorias_slugs: list[str] | None = None,
     system_extra: str = "",
     contexto_blog: str = "",
+    wp_client=None,  # opcional, usado para auto-gerar hero quando AUTO_GERAR_HERO=true
 ) -> None:
     post_id = str(artigo.post_id)
     if store.exists(post_id):
@@ -109,6 +166,11 @@ def processar_artigo_novo(
         if artigo.slug
         else _artigo_url(post_id)
     )
+
+    # Auto-gera hero se artigo nao tem featured_media e flag ativa
+    # (precisa rodar ANTES do styler para o hero entrar na estilizacao)
+    if wp_client is not None:
+        _gerar_e_anexar_hero(estado, cfg, wp_client, logger)
 
     try:
         estado.html_estilizado = article_styler.estilizar(
@@ -402,6 +464,7 @@ def main() -> int:
                     categorias_slugs=slugs,
                     system_extra=system_extra,
                     contexto_blog=contexto_blog,
+                    wp_client=wp,
                 )
         except LockBusy:
             logger.info("producer", status="artigo_ocupado", post_id=str(artigo.post_id))
