@@ -25,7 +25,7 @@ from pathlib import Path
 
 from src.config import load_config
 from src.heartbeat import bater
-from src.logger import get_logger, log_stage, setup_logging
+from src.logger import get_logger, setup_logging
 
 # diretorios a incluir no backup (relativos ao project_root)
 INCLUI = [
@@ -92,13 +92,13 @@ def fazer_backup(cfg, destino: Path | None = None, logger=None) -> Path | None:
     if incluidos == 0:
         arq.unlink(missing_ok=True)
         if logger:
-            log_stage(logger, "-", "backup", "nada_para_empacotar")
+            logger.info("backup", status="nada_para_empacotar")
         return None
 
     tamanho = arq.stat().st_size
     if logger:
-        log_stage(logger, "-", "backup", "ok",
-                  arquivo=str(arq), tamanho=tamanho, incluidos=incluidos)
+        logger.info("backup", status="ok",
+                    arquivo=str(arq), tamanho=tamanho, incluidos=incluidos)
     return arq
 
 
@@ -125,8 +125,8 @@ def rotacionar(destino: Path | None = None, manter: int = 30, logger=None) -> in
         except OSError:
             continue
     if logger and a_apagar:
-        log_stage(logger, "-", "backup", "rotacao",
-                  apagados=len(a_apagar), mantidos=min(len(backups), manter))
+        logger.info("backup", status="rotacao",
+                    apagados=len(a_apagar), mantidos=min(len(backups), manter))
     return len(a_apagar)
 
 
