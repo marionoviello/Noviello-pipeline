@@ -63,16 +63,21 @@ def _graph_get(caminho: str, params: dict) -> dict:
 
 
 def _esperar_finished(container_id: str, token: str, tentativas: int = 15) -> None:
-    """Aguarda o container ficar FINISHED (polling 2s, ~30s no maximo)."""
-    for _ in range(tentativas):
-        status = _graph_get(container_id, {"fields": "status_code", "access_token": token})
-        code = status.get("status_code")
-        if code == "FINISHED":
-            return
-        if code == "ERROR":
-            raise RuntimeError(f"container {container_id} entrou em ERROR")
-        time.sleep(2)
-    raise TimeoutError(f"container {container_id} nao ficou FINISHED a tempo")
+    """Aguarda processamento do container antes de publicar.
+
+    Originalmente fazia polling em GET /{container_id}?fields=status_code, mas
+    em 2026-05 o Meta passou a retornar 400/subcode 33 ('Authorization Error /
+    object does not exist') nesse endpoint mesmo com token+scope corretos.
+    O motivo aparenta ser uma restricao na "Instagram API with Instagram
+    Login" — POST cria o container ok, mas leituras de status sao bloqueadas
+    para tokens nao "App Review-approved".
+
+    Estrategia atual: espera passiva (sleep). Funcional na pratica — 60s
+    cobre o processamento mesmo de carrosseis de 10 slides. Se um dia o
+    endpoint voltar, este helper pode ser reescrito.
+    """
+    # 60s cobre carrossel de ate 10 slides (~5s por slide + margem)
+    time.sleep(60)
 
 
 def publish(peca: Peca, cfg, logger) -> PublishResult:
@@ -127,8 +132,11 @@ def publish(peca: Peca, cfg, logger) -> PublishResult:
     )
     media_id = publicado["id"]
 
-    # 4. obtem o permalink
-    info = _graph_get(media_id, {"fields": "permalink", "access_token": token})
-    permalink = info.get("permalink", "")
+    # 4. obtem o permalink (best-effort — Meta as vezes bloqueia GET com 400)
+    try:
+        info = _graph_get(media_id, {"fields": "permalink", "access_token": token})
+        permalink = info.get("permalink", "")
+    except Exception:  # noqa: BLE001
+        permalink = f"https://www.instagram.com/novielloadv/"  # fallback: perfil
 
     return PublishResult.sucesso(NOME, permalink, ids={"media_id": media_id})
