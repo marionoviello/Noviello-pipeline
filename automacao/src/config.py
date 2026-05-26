@@ -98,6 +98,13 @@ class Config:
     auto_gerar_hero: bool = False
     google_ai_api_key: str = ""
 
+    # Julgado da Semana — producer automatizado (Wave 4)
+    julgado_ativo: bool = True
+    julgado_calendario: str = "Noviello — Marketing"
+    julgado_filtro_titulo: str = "[NOV-MKT] LI 08h30 — Julgado"
+    julgado_janela_horas: int = 72
+    julgado_dir: Path | None = None
+
     def channel_enabled(self, canal: str) -> bool:
         return canal in self.enabled_channels
 
@@ -192,7 +199,16 @@ def load_config() -> Config:
         wp_categoria_backlog=_get("WP_CATEGORIA_BACKLOG", "Backlog Editorial"),
         auto_gerar_hero=_bool(_get("AUTO_GERAR_HERO", "false")),
         google_ai_api_key=_get("GOOGLE_AI_API_KEY"),
+        julgado_ativo=_bool(_get("JULGADO_ATIVO", "true")),
+        julgado_calendario=_get("JULGADO_CALENDARIO", "Noviello — Marketing"),
+        julgado_filtro_titulo=_get("JULGADO_FILTRO_TITULO", "[NOV-MKT] LI 08h30 — Julgado"),
+        julgado_janela_horas=int(_get("JULGADO_JANELA_HORAS", "72") or "72"),
+        julgado_dir=Path(_get("JULGADO_DIR")) if _get("JULGADO_DIR") else None,
     )
+
+    # default derivado: julgado_dir = producao_dir/julgados
+    if cfg.julgado_dir is None:
+        cfg.julgado_dir = cfg.producao_dir / "julgados"
 
     # garante que as pastas de trabalho existem
     for d in (cfg.state_dir, cfg.logs_dir):

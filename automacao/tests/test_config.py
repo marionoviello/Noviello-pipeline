@@ -78,3 +78,31 @@ def test_config_anthropic_e_fila_social():
     assert cfg.anthropic["model"]  # tem default
     assert cfg.wp_categoria_fila_social  # tem default
     assert cfg.anthropic_pronto() == bool(cfg.anthropic.get("api_key"))
+
+
+def test_julgado_defaults_sensatos():
+    """Sem env vars, julgado tem defaults uteis pro Mario."""
+    cfg = load_config()
+    assert cfg.julgado_ativo is True
+    assert cfg.julgado_calendario == "Noviello — Marketing"
+    assert cfg.julgado_filtro_titulo == "[NOV-MKT] LI 08h30 — Julgado"
+    assert cfg.julgado_janela_horas == 72
+    assert cfg.julgado_dir == cfg.producao_dir / "julgados"
+
+
+def test_julgado_dir_override_via_env(monkeypatch, tmp_path):
+    monkeypatch.setenv("JULGADO_DIR", str(tmp_path / "custom"))
+    cfg = load_config()
+    assert cfg.julgado_dir == tmp_path / "custom"
+
+
+def test_julgado_ativo_desligado_via_env(monkeypatch):
+    monkeypatch.setenv("JULGADO_ATIVO", "false")
+    cfg = load_config()
+    assert cfg.julgado_ativo is False
+
+
+def test_julgado_janela_horas_override(monkeypatch):
+    monkeypatch.setenv("JULGADO_JANELA_HORAS", "48")
+    cfg = load_config()
+    assert cfg.julgado_janela_horas == 48
