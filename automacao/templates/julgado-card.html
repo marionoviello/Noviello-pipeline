@@ -2,18 +2,19 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<title>{tema} — Julgado da Semana</title>
+<title>{tema_rodape} — Julgado da Semana</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800;900&family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
     --claret: #68192E;
     --chocolate: #540D1D;
     --gold: #D4AF37;
+    --gold-soft: rgba(212, 175, 55, 0.35);
     --creme: #FAF7F5;
-    --creme-soft: rgba(250, 247, 245, 0.88);
-    --creme-muted: rgba(250, 247, 245, 0.65);
+    --creme-soft: rgba(250, 247, 245, 0.92);
+    --creme-muted: rgba(250, 247, 245, 0.7);
     --paper: #F3E9D6;
     --paper-shadow: #C8B89A;
   }
@@ -30,66 +31,97 @@
   .card {
     width: 1080px; height: 1080px;
     background:
-      radial-gradient(ellipse at top right, rgba(212, 175, 55, 0.10) 0%, transparent 50%),
-      radial-gradient(ellipse at bottom left, rgba(212, 175, 55, 0.08) 0%, transparent 50%),
+      radial-gradient(ellipse 80% 60% at top right, rgba(212, 175, 55, 0.13) 0%, transparent 60%),
+      radial-gradient(ellipse 80% 60% at bottom left, rgba(212, 175, 55, 0.10) 0%, transparent 60%),
       linear-gradient(180deg, var(--claret) 0%, var(--chocolate) 100%);
-    padding: 50px 50px 0;
+    padding: 44px 50px 0;
     position: relative;
     display: flex;
     flex-direction: column;
   }
 
-  /* ---- Topo: chapéu temático ---- */
+  /* Textura sutil tipo grão de papel */
+  .card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image:
+      repeating-linear-gradient(45deg, rgba(212,175,55,0.012) 0 2px, transparent 2px 4px);
+    pointer-events: none;
+    z-index: 0;
+  }
+  .card > * { position: relative; z-index: 1; }
+
+  /* ===== Topo: chip área + selo STJ + carimbo unanimidade ===== */
   .chapeu {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 38px;
+    margin-bottom: 28px;
   }
-  .chapeu .area {
+  .chapeu-esq { display: flex; align-items: center; gap: 14px; }
+  .chip-area {
     font-family: 'Poppins', sans-serif;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 600;
     letter-spacing: 4px;
     text-transform: uppercase;
     color: var(--gold);
-    padding: 8px 16px;
-    border: 1px solid var(--gold);
+    padding: 9px 18px;
+    border: 1.5px solid var(--gold);
     border-radius: 2px;
   }
-  .chapeu .selo-stj {
-    display: flex; align-items: center; gap: 12px;
+  .carimbo-unanime {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'Poppins', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: var(--creme);
+    background: var(--gold);
+    padding: 5px 12px;
+    border-radius: 3px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
+  }
+  .carimbo-unanime .bullet { color: var(--chocolate); font-size: 14px; line-height: 1; }
+  .selo-stj {
+    display: flex; align-items: center; gap: 14px;
     font-family: 'Cinzel', serif;
     font-weight: 700;
     color: var(--gold);
   }
-  .chapeu .selo-stj .icone {
-    width: 38px; height: 38px;
-    border: 2px solid var(--gold); border-radius: 50%;
+  .selo-stj .icone {
+    width: 46px; height: 46px;
+    border: 2.5px solid var(--gold); border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    font-size: 18px;
+    font-size: 22px;
   }
-  .chapeu .selo-stj .nome {
-    font-size: 22px; letter-spacing: 4px;
+  .selo-stj .nome {
+    font-size: 28px; letter-spacing: 5px;
   }
 
-  /* ---- Título principal (tese decidida) ---- */
+  /* ===== Tese principal ===== */
   .tese-bloco {
-    margin-bottom: 32px;
+    margin-bottom: 28px;
+    padding-bottom: 24px;
+    border-bottom: 2px solid var(--gold-soft);
   }
   .tese-bloco .label {
     font-family: 'Poppins', sans-serif;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 3px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 4px;
     text-transform: uppercase;
     color: var(--gold);
-    margin-bottom: 10px;
+    margin-bottom: 12px;
   }
   .tese-bloco h1 {
     font-family: 'Cinzel', serif;
-    font-size: 36px;
-    line-height: 1.18;
+    font-size: 44px;
+    line-height: 1.15;
     font-weight: 600;
     color: var(--creme);
     text-transform: uppercase;
@@ -97,83 +129,88 @@
   }
   .tese-bloco .processo {
     font-family: 'Poppins', sans-serif;
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 500;
     color: var(--gold);
-    margin-top: 12px;
-    letter-spacing: 1px;
+    margin-top: 14px;
+    letter-spacing: 1.5px;
   }
 
-  /* ---- Conteúdo em 3 colunas ---- */
+  /* ===== Conteúdo 3 colunas ===== */
   .conteudo {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
-    gap: 28px;
+    gap: 0;
     flex: 1;
-    margin-bottom: 28px;
+    margin-bottom: 22px;
   }
+  .conteudo > div {
+    padding: 0 22px;
+    border-right: 1px solid var(--gold-soft);
+  }
+  .conteudo > div:first-child { padding-left: 0; }
+  .conteudo > div:last-child { padding-right: 0; border-right: none; }
 
   /* ===== Coluna 1: Ministra + Citação ===== */
   .col-ministra {
     display: flex;
     flex-direction: column;
-    padding-right: 8px;
   }
-  .col-ministra .ministro-card {
-    background: rgba(212, 175, 55, 0.06);
-    border: 1px solid rgba(212, 175, 55, 0.3);
+  .ministro-card {
+    background: rgba(212, 175, 55, 0.08);
+    border: 1px solid rgba(212, 175, 55, 0.4);
     border-radius: 4px;
-    padding: 18px;
-    margin-bottom: 16px;
+    padding: 16px 18px;
+    margin-bottom: 22px;
   }
-  .col-ministra .ministro-card .label-pequeno {
-    font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase;
-    color: var(--creme-muted); margin-bottom: 6px; font-weight: 500;
+  .ministro-card .label-pequeno {
+    font-size: 11px; letter-spacing: 3px; text-transform: uppercase;
+    color: var(--creme-muted); margin-bottom: 6px; font-weight: 600;
   }
-  .col-ministra .ministro-card .nome-ministra {
+  .ministro-card .nome-ministra {
     font-family: 'Cinzel', serif;
     font-weight: 600;
-    font-size: 16px;
-    line-height: 1.25;
+    font-size: 19px;
+    line-height: 1.2;
     color: var(--gold);
     margin-bottom: 4px;
   }
-  .col-ministra .ministro-card .turma {
-    font-size: 11px; color: var(--creme-soft);
+  .ministro-card .turma {
+    font-size: 12px; color: var(--creme-soft);
   }
-  .col-ministra .citacao {
+  .citacao {
     font-family: 'Cinzel', serif;
     font-style: italic;
-    font-size: 17px;
-    line-height: 1.45;
+    font-size: 20px;
+    line-height: 1.4;
     color: var(--creme);
-    padding: 0 0 0 16px;
+    padding: 16px 0 0 22px;
     border-left: 3px solid var(--gold);
     position: relative;
     flex: 1;
   }
-  .col-ministra .citacao::before {
+  .citacao::before {
     content: "\201C";
     position: absolute;
-    left: -2px; top: -20px;
+    left: -4px; top: -20px;
     font-family: 'Cinzel', serif;
-    font-size: 56px;
+    font-size: 72px;
     color: var(--gold);
     line-height: 1;
   }
-  .col-ministra .citacao .autoria {
+  .citacao .autoria {
     display: block;
     font-family: 'Poppins', sans-serif;
     font-style: normal;
-    font-size: 11px;
-    letter-spacing: 2px;
+    font-size: 12px;
+    letter-spacing: 2.5px;
     text-transform: uppercase;
     color: var(--gold);
-    margin-top: 14px;
-    font-weight: 600;
+    margin-top: 18px;
+    font-weight: 700;
   }
 
-  /* ===== Coluna 2: Recibo ilustrativo ===== */
+  /* ===== Coluna 2: Recibo ===== */
   .col-recibo {
     display: flex;
     flex-direction: column;
@@ -181,121 +218,127 @@
     justify-content: flex-start;
   }
   .col-recibo .label-bloco {
-    font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase;
-    color: var(--gold); margin-bottom: 12px; font-weight: 600;
+    font-size: 11px; letter-spacing: 3px; text-transform: uppercase;
+    color: var(--gold); margin-bottom: 16px; font-weight: 700;
     text-align: center;
   }
   .recibo-mock {
     background: var(--paper);
     color: #4a3a2a;
     width: 100%;
-    padding: 18px 16px;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4), 0 2px 0 var(--paper-shadow);
+    padding: 22px 18px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 3px 0 var(--paper-shadow);
     transform: rotate(-1.5deg);
     font-family: 'Courier New', monospace;
-    font-size: 9px;
-    line-height: 1.5;
+    font-size: 11px;
+    line-height: 1.55;
     border: 1px solid var(--paper-shadow);
     position: relative;
   }
   .recibo-mock .titulo-doc {
     font-weight: 700;
     text-align: center;
-    font-size: 11px;
-    letter-spacing: 1px;
-    margin-bottom: 10px;
-    padding-bottom: 6px;
+    font-size: 13px;
+    letter-spacing: 1.5px;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
     border-bottom: 1px solid #b09a78;
   }
   .recibo-mock .valor-destaque {
     text-align: right;
     font-weight: 700;
-    font-size: 13px;
-    margin: 8px 0;
+    font-size: 18px;
+    margin: 10px 0;
     color: #3a2a1a;
   }
-  .recibo-mock .linha { margin-bottom: 4px; }
+  .recibo-mock .linha { margin-bottom: 5px; }
   .recibo-mock .linha-borrada {
     background: linear-gradient(90deg, transparent 0%, #4a3a2a 5%, #4a3a2a 80%, transparent 95%);
-    height: 6px;
+    height: 7px;
     margin: 3px 0;
     opacity: 0.45;
     border-radius: 2px;
   }
   .recibo-mock .assinatura {
-    margin-top: 14px;
-    padding-top: 8px;
+    margin-top: 16px;
+    padding-top: 10px;
     border-top: 1px dashed #b09a78;
     font-style: italic;
-    font-size: 10px;
+    font-size: 13px;
     transform: rotate(2deg);
     text-align: center;
   }
   .col-recibo .legenda-recibo {
-    margin-top: 14px;
-    font-size: 11px;
+    margin-top: 18px;
+    font-size: 13px;
     color: var(--creme-soft);
     text-align: center;
     font-style: italic;
     line-height: 1.4;
   }
 
-  /* ===== Coluna 3: Fundamentação ===== */
+  /* ===== Coluna 3: Fundamentos ===== */
   .col-fundamentos {
     display: flex;
     flex-direction: column;
-    padding-left: 8px;
   }
   .col-fundamentos .label-bloco {
-    font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase;
-    color: var(--gold); margin-bottom: 14px; font-weight: 600;
+    font-size: 11px; letter-spacing: 3px; text-transform: uppercase;
+    color: var(--gold); margin-bottom: 16px; font-weight: 700;
   }
   .fund-item {
-    margin-bottom: 13px;
-    padding-bottom: 13px;
-    border-bottom: 1px solid rgba(212, 175, 55, 0.18);
+    margin-bottom: 14px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid rgba(212, 175, 55, 0.2);
   }
   .fund-item:last-child { border-bottom: none; }
   .fund-item .fonte {
     font-family: 'Cinzel', serif;
     font-weight: 600;
-    font-size: 13px;
+    font-size: 15px;
     color: var(--gold);
     letter-spacing: 0.5px;
-    margin-bottom: 4px;
+    margin-bottom: 5px;
   }
   .fund-item .texto {
-    font-size: 12px;
-    line-height: 1.45;
+    font-size: 13px;
+    line-height: 1.5;
     color: var(--creme-soft);
   }
 
-  /* ---- Rodapé com marca ---- */
+  /* ===== Rodapé com LOGO ===== */
   .rodape {
     margin: 0 -50px;
-    padding: 22px 50px;
-    background: rgba(0, 0, 0, 0.28);
-    border-top: 2px solid var(--gold);
+    padding: 28px 50px;
+    background: rgba(0, 0, 0, 0.35);
+    border-top: 3px solid var(--gold);
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 30px;
   }
-  .rodape .marca {
-    font-family: 'Cinzel', serif;
-    font-weight: 700;
-    font-size: 19px;
-    letter-spacing: 4px;
-    color: var(--creme);
-    text-transform: uppercase;
+  .rodape .marca-bloco {
+    display: flex;
+    align-items: center;
+    gap: 22px;
   }
-  .rodape .marca .sub {
+  .rodape .logo {
     display: block;
+    /* logo pre-redimensionado 525x140 — tamanho nativo */
+    width: 525px;
+    height: 140px;
+    filter: drop-shadow(0 2px 6px rgba(0,0,0,0.4));
+  }
+  .rodape .sub {
     font-family: 'Poppins', sans-serif;
     font-weight: 400;
-    font-size: 10px;
+    font-size: 12px;
     letter-spacing: 3px;
     color: var(--gold);
-    margin-top: 2px;
+    text-transform: uppercase;
+    border-left: 2px solid var(--gold-soft);
+    padding-left: 16px;
+    line-height: 1.4;
   }
   .rodape .tema-rodape {
     text-align: right;
@@ -303,16 +346,16 @@
   .rodape .tema-rodape .principal {
     font-family: 'Cinzel', serif;
     font-weight: 600;
-    font-size: 18px;
+    font-size: 22px;
     color: var(--gold);
     text-transform: uppercase;
-    letter-spacing: 1.5px;
+    letter-spacing: 2px;
   }
   .rodape .tema-rodape .subprincipal {
     font-family: 'Poppins', sans-serif;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--creme-soft);
-    margin-top: 3px;
+    margin-top: 4px;
     letter-spacing: 0.5px;
   }
 </style>
@@ -321,7 +364,10 @@
 <div class="card">
 
   <div class="chapeu">
-    <div class="area">{area}</div>
+    <div class="chapeu-esq">
+      <div class="chip-area">{area}</div>
+      <div class="carimbo-unanime"><span class="bullet">●</span> Unanimidade</div>
+    </div>
     <div class="selo-stj">
       <div class="icone">⚖</div>
       <div class="nome">{orgao}</div>
@@ -359,7 +405,7 @@
         <div class="valor-destaque">R$ 16.000,00</div>
         <div class="linha"><b>IMÓVEL:</b> 1 (um) terreno c/ casa</div>
         <div class="linha-borrada"></div>
-        <div class="linha" style="font-size:8px">Aracaju/SE · 09/06/2014</div>
+        <div class="linha" style="font-size:10px">Aracaju/SE · 09/06/2014</div>
         <div class="assinatura">{assinatura}</div>
       </div>
       <div class="legenda-recibo">{legenda_doc}</div>
@@ -373,13 +419,10 @@
   </div>
 
   <div class="rodape">
-    <div class="marca">
-      Noviello
-      <span class="sub">{subtitulo_marca}</span>
-    </div>
+    <img class="logo" src="logo-noviello-branco.png?v=6" alt="Noviello Advocacia">
     <div class="tema-rodape">
       <div class="principal">{tema_rodape}</div>
-      <div class="subprincipal">{tema_rodape_sub}</div>
+      <div class="subprincipal">{tema_rodape_sub} · {subtitulo_marca}</div>
     </div>
   </div>
 

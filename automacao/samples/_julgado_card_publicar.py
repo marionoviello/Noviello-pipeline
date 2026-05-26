@@ -92,6 +92,12 @@ def montar_html(dados: dict, canal: str = "li") -> str:
 
 def renderizar(html: str, destino: Path) -> Path:
     from playwright.sync_api import sync_playwright
+    # Copia logo pro mesmo diretorio do HTML (path relativo no img src)
+    import shutil
+    logo_src = ROOT / "templates" / "logo-noviello-branco.png"
+    logo_dst = destino.parent / "logo-noviello-branco.png"
+    if logo_src.exists():
+        shutil.copy(logo_src, logo_dst)
     arq_html = destino.with_suffix(".html")
     arq_html.write_text(html, encoding="utf-8")
     arq_jpg = destino.with_suffix(".jpg")
@@ -139,6 +145,8 @@ Caso concreto: Maria do Carmo, Aracaju/SE, comprou imóvel de R$ 16 mil em 2014,
 Impacto prático para o advogado imobiliário: amplia drasticamente o universo de imóveis usucapíveis pela via ordinária. Casos que antes exigiam usucapião extraordinária (15 anos sem justo título) agora podem ser resolvidos em 10 anos pela ordinária. Em situações com posse-trabalho/moradia, em 5 anos pelo parágrafo único.
 
 Vale revisitar a carteira ativa: clientes com imóveis "no recibo" há mais de 10 anos têm um caminho mais curto agora.
+
+Análise completa no blog: https://noviello.adv.br/usucapiao-ordinaria-stj-confirma-recibo-de-compra-e-venda-como-justo-titulo/
 
 #usucapiao #direitoimobiliario #stj"""
 
