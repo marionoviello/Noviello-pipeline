@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>{tema} — Julgado da Semana</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800&family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --claret: #68192E;
+    --chocolate: #540D1D;
+    --gold: #D4AF37;
+    --creme: #FAF7F5;
+    --creme-soft: rgba(250, 247, 245, 0.88);
+    --creme-muted: rgba(250, 247, 245, 0.65);
+    --paper: #F3E9D6;
+    --paper-shadow: #C8B89A;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    width: 1080px; height: 1080px;
+    font-family: 'Poppins', sans-serif;
+    color: var(--creme);
+    overflow: hidden;
+  }
+
+  .card {
+    width: 1080px; height: 1080px;
+    background:
+      radial-gradient(ellipse at top right, rgba(212, 175, 55, 0.10) 0%, transparent 50%),
+      radial-gradient(ellipse at bottom left, rgba(212, 175, 55, 0.08) 0%, transparent 50%),
+      linear-gradient(180deg, var(--claret) 0%, var(--chocolate) 100%);
+    padding: 50px 50px 0;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ---- Topo: chapéu temático ---- */
+  .chapeu {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 38px;
+  }
+  .chapeu .area {
+    font-family: 'Poppins', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: var(--gold);
+    padding: 8px 16px;
+    border: 1px solid var(--gold);
+    border-radius: 2px;
+  }
+  .chapeu .selo-stj {
+    display: flex; align-items: center; gap: 12px;
+    font-family: 'Cinzel', serif;
+    font-weight: 700;
+    color: var(--gold);
+  }
+  .chapeu .selo-stj .icone {
+    width: 38px; height: 38px;
+    border: 2px solid var(--gold); border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+  }
+  .chapeu .selo-stj .nome {
+    font-size: 22px; letter-spacing: 4px;
+  }
+
+  /* ---- Título principal (tese decidida) ---- */
+  .tese-bloco {
+    margin-bottom: 32px;
+  }
+  .tese-bloco .label {
+    font-family: 'Poppins', sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin-bottom: 10px;
+  }
+  .tese-bloco h1 {
+    font-family: 'Cinzel', serif;
+    font-size: 36px;
+    line-height: 1.18;
+    font-weight: 600;
+    color: var(--creme);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .tese-bloco .processo {
+    font-family: 'Poppins', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--gold);
+    margin-top: 12px;
+    letter-spacing: 1px;
+  }
+
+  /* ---- Conteúdo em 3 colunas ---- */
+  .conteudo {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 28px;
+    flex: 1;
+    margin-bottom: 28px;
+  }
+
+  /* ===== Coluna 1: Ministra + Citação ===== */
+  .col-ministra {
+    display: flex;
+    flex-direction: column;
+    padding-right: 8px;
+  }
+  .col-ministra .ministro-card {
+    background: rgba(212, 175, 55, 0.06);
+    border: 1px solid rgba(212, 175, 55, 0.3);
+    border-radius: 4px;
+    padding: 18px;
+    margin-bottom: 16px;
+  }
+  .col-ministra .ministro-card .label-pequeno {
+    font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase;
+    color: var(--creme-muted); margin-bottom: 6px; font-weight: 500;
+  }
+  .col-ministra .ministro-card .nome-ministra {
+    font-family: 'Cinzel', serif;
+    font-weight: 600;
+    font-size: 16px;
+    line-height: 1.25;
+    color: var(--gold);
+    margin-bottom: 4px;
+  }
+  .col-ministra .ministro-card .turma {
+    font-size: 11px; color: var(--creme-soft);
+  }
+  .col-ministra .citacao {
+    font-family: 'Cinzel', serif;
+    font-style: italic;
+    font-size: 17px;
+    line-height: 1.45;
+    color: var(--creme);
+    padding: 0 0 0 16px;
+    border-left: 3px solid var(--gold);
+    position: relative;
+    flex: 1;
+  }
+  .col-ministra .citacao::before {
+    content: "\201C";
+    position: absolute;
+    left: -2px; top: -20px;
+    font-family: 'Cinzel', serif;
+    font-size: 56px;
+    color: var(--gold);
+    line-height: 1;
+  }
+  .col-ministra .citacao .autoria {
+    display: block;
+    font-family: 'Poppins', sans-serif;
+    font-style: normal;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin-top: 14px;
+    font-weight: 600;
+  }
+
+  /* ===== Coluna 2: Recibo ilustrativo ===== */
+  .col-recibo {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+  }
+  .col-recibo .label-bloco {
+    font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase;
+    color: var(--gold); margin-bottom: 12px; font-weight: 600;
+    text-align: center;
+  }
+  .recibo-mock {
+    background: var(--paper);
+    color: #4a3a2a;
+    width: 100%;
+    padding: 18px 16px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4), 0 2px 0 var(--paper-shadow);
+    transform: rotate(-1.5deg);
+    font-family: 'Courier New', monospace;
+    font-size: 9px;
+    line-height: 1.5;
+    border: 1px solid var(--paper-shadow);
+    position: relative;
+  }
+  .recibo-mock .titulo-doc {
+    font-weight: 700;
+    text-align: center;
+    font-size: 11px;
+    letter-spacing: 1px;
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #b09a78;
+  }
+  .recibo-mock .valor-destaque {
+    text-align: right;
+    font-weight: 700;
+    font-size: 13px;
+    margin: 8px 0;
+    color: #3a2a1a;
+  }
+  .recibo-mock .linha { margin-bottom: 4px; }
+  .recibo-mock .linha-borrada {
+    background: linear-gradient(90deg, transparent 0%, #4a3a2a 5%, #4a3a2a 80%, transparent 95%);
+    height: 6px;
+    margin: 3px 0;
+    opacity: 0.45;
+    border-radius: 2px;
+  }
+  .recibo-mock .assinatura {
+    margin-top: 14px;
+    padding-top: 8px;
+    border-top: 1px dashed #b09a78;
+    font-style: italic;
+    font-size: 10px;
+    transform: rotate(2deg);
+    text-align: center;
+  }
+  .col-recibo .legenda-recibo {
+    margin-top: 14px;
+    font-size: 11px;
+    color: var(--creme-soft);
+    text-align: center;
+    font-style: italic;
+    line-height: 1.4;
+  }
+
+  /* ===== Coluna 3: Fundamentação ===== */
+  .col-fundamentos {
+    display: flex;
+    flex-direction: column;
+    padding-left: 8px;
+  }
+  .col-fundamentos .label-bloco {
+    font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase;
+    color: var(--gold); margin-bottom: 14px; font-weight: 600;
+  }
+  .fund-item {
+    margin-bottom: 13px;
+    padding-bottom: 13px;
+    border-bottom: 1px solid rgba(212, 175, 55, 0.18);
+  }
+  .fund-item:last-child { border-bottom: none; }
+  .fund-item .fonte {
+    font-family: 'Cinzel', serif;
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--gold);
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
+  .fund-item .texto {
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--creme-soft);
+  }
+
+  /* ---- Rodapé com marca ---- */
+  .rodape {
+    margin: 0 -50px;
+    padding: 22px 50px;
+    background: rgba(0, 0, 0, 0.28);
+    border-top: 2px solid var(--gold);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .rodape .marca {
+    font-family: 'Cinzel', serif;
+    font-weight: 700;
+    font-size: 19px;
+    letter-spacing: 4px;
+    color: var(--creme);
+    text-transform: uppercase;
+  }
+  .rodape .marca .sub {
+    display: block;
+    font-family: 'Poppins', sans-serif;
+    font-weight: 400;
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: var(--gold);
+    margin-top: 2px;
+  }
+  .rodape .tema-rodape {
+    text-align: right;
+  }
+  .rodape .tema-rodape .principal {
+    font-family: 'Cinzel', serif;
+    font-weight: 600;
+    font-size: 18px;
+    color: var(--gold);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+  }
+  .rodape .tema-rodape .subprincipal {
+    font-family: 'Poppins', sans-serif;
+    font-size: 11px;
+    color: var(--creme-soft);
+    margin-top: 3px;
+    letter-spacing: 0.5px;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+
+  <div class="chapeu">
+    <div class="area">{area}</div>
+    <div class="selo-stj">
+      <div class="icone">⚖</div>
+      <div class="nome">{orgao}</div>
+    </div>
+  </div>
+
+  <div class="tese-bloco">
+    <div class="label">Julgado da Semana</div>
+    <h1>{tese}</h1>
+    <div class="processo">{processo} · {orgao_completo} · julgado em {data_julgamento}</div>
+  </div>
+
+  <div class="conteudo">
+
+    <div class="col-ministra">
+      <div class="ministro-card">
+        <div class="label-pequeno">Relatora</div>
+        <div class="nome-ministra">{relator}</div>
+        <div class="turma">{turma}</div>
+      </div>
+      <div class="citacao">
+        {citacao_principal}
+        <span class="autoria">— {relator_curto}, voto</span>
+      </div>
+    </div>
+
+    <div class="col-recibo">
+      <div class="label-bloco">{label_doc}</div>
+      <div class="recibo-mock">
+        <div class="titulo-doc">RECIBO DE COMPRA E VENDA</div>
+        <div class="linha"><b>VENDEDORA:</b></div>
+        <div class="linha-borrada"></div>
+        <div class="linha"><b>COMPRADORA:</b></div>
+        <div class="linha-borrada"></div>
+        <div class="valor-destaque">R$ 16.000,00</div>
+        <div class="linha"><b>IMÓVEL:</b> 1 (um) terreno c/ casa</div>
+        <div class="linha-borrada"></div>
+        <div class="linha" style="font-size:8px">Aracaju/SE · 09/06/2014</div>
+        <div class="assinatura">{assinatura}</div>
+      </div>
+      <div class="legenda-recibo">{legenda_doc}</div>
+    </div>
+
+    <div class="col-fundamentos">
+      <div class="label-bloco">Fundamentação</div>
+      {fundamentos_html}
+    </div>
+
+  </div>
+
+  <div class="rodape">
+    <div class="marca">
+      Noviello
+      <span class="sub">{subtitulo_marca}</span>
+    </div>
+    <div class="tema-rodape">
+      <div class="principal">{tema_rodape}</div>
+      <div class="subprincipal">{tema_rodape_sub}</div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

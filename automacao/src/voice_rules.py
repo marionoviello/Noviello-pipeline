@@ -7,6 +7,20 @@ adaptada pro contexto Noviello (juridico PT-BR).
 from __future__ import annotations
 
 VOICE_RULES_LINKEDIN = """
+== TERMINOLOGIA POR CANAL (LINKEDIN B2B) ==
+
+EVITE no LinkedIn (e em copy B2B em geral):
+- "Direito Senior" / "publico Senior" / "advocacia Senior"  → terminologia
+  editorial do IG @novielloadv (B2C, publico 50+). No LinkedIn (B2B —
+  incorporadores, investidores, advogados, sindicos profissionais), soa
+  restritivo e perde alcance.
+- Use no lugar: a area tecnica especifica do tema (Imobiliario, Sucessorio,
+  Urbanistico, Tributario imobiliario), OU "Advocacia" simples.
+
+Quando a peca tem ESSA assinatura de marca (rodape de card, footer):
+- LinkedIn: "Advocacia · Imobiliario e Sucessorio" (ou area do tema)
+- Instagram: "Advocacia · Direito Senior" (mantem)
+
 == REGRAS DE VOZ NATURAL (CRITICAS) ==
 
 REGRAS DURAS — NAO VIOLAR:

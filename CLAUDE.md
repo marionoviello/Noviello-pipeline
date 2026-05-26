@@ -79,6 +79,13 @@ Cada pilar semanal gera uma cascata interligada:
 - **Funil de atendimento**: FORA DE ESCOPO neste ciclo — Mario já opera CRM com IA de atendimento (reabordar em ciclo futuro)
 - **Gap de cobertura identificado**: pilares Sênior/Geriátrico, Saúde Suplementar e Previdenciário ausentes da atual campanha de 8 semanas (que é fortemente Imobiliário). Próximo ciclo precisa incluí-los.
 
+## Regras editoriais por canal
+
+- **LinkedIn (B2B)**: NÃO usar "Direito Sênior" / "público Sênior" — soa restritivo para incorporadores, advogados, investidores. Usar área técnica do tema (Imobiliário, Sucessório, Urbanístico, Tributário imobiliário) ou "Advocacia" simples na assinatura de marca.
+- **Instagram @novielloadv (B2C)**: pode usar "Direito Sênior" como editorial — é o público-alvo declarado (50+, classe A/AA/B). Carrosséis, legendas e cards podem manter essa terminologia.
+- **Blog WP**: tom institucional/SEO — área técnica do tema, sem rotular "Sênior" no título a menos que o artigo seja especificamente sobre 3ª idade.
+- **Stories IG**: tom informal, mas evita autoposicionamento ("nós da Noviello"). Foco no conteúdo.
+
 ## Preferências de trabalho com Claude
 - PT-BR padrão
 - Profundidade técnica + executabilidade pragmática
