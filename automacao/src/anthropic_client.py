@@ -53,6 +53,72 @@ CAROUSEL_SCHEMA = {
 }
 
 
+# Schema do carrossel quando entrada e um julgado estruturado.
+# Cada slide aceita os 4 campos opcionais do Batch (a): area, selo_tribunal,
+# processo_id, carimbo (todos string vazia por default).
+CAROUSEL_SCHEMA_JULGADO = {
+    "type": "object",
+    "properties": {
+        "slides": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "titulo": {"type": "string"},
+                    "corpo": {"type": "string"},
+                    "area": {"type": "string"},
+                    "selo_tribunal": {"type": "string"},
+                    "processo_id": {"type": "string"},
+                    "carimbo": {"type": "string"},
+                },
+                "required": ["titulo", "corpo"],
+                "additionalProperties": False,
+            },
+        },
+        "legenda": {"type": "string"},
+        "hashtags": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["slides", "legenda", "hashtags"],
+    "additionalProperties": False,
+}
+
+
+# Schema de extracao estruturada de um acordao a partir do texto bruto do PDF.
+JULGADO_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "area": {"type": "string"},
+        "orgao": {"type": "string"},
+        "orgao_completo": {"type": "string"},
+        "turma": {"type": "string"},
+        "processo_id": {"type": "string"},
+        "data_julgamento": {"type": "string"},
+        "relator": {"type": "string"},
+        "relator_curto": {"type": "string"},
+        "tese": {"type": "string"},
+        "citacao_principal": {"type": "string"},
+        "carimbo": {"type": "string"},
+        "fundamentos": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "fonte": {"type": "string"},
+                    "texto": {"type": "string"},
+                },
+                "required": ["fonte", "texto"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": [
+        "area", "orgao", "processo_id", "relator",
+        "tese", "citacao_principal", "carimbo", "fundamentos",
+    ],
+    "additionalProperties": False,
+}
+
+
 class AnthropicClient:
     def __init__(self, anthropic_cfg: dict, templates_dir: Path):
         self._client = anthropic.Anthropic(api_key=anthropic_cfg["api_key"])
@@ -202,6 +268,191 @@ class AnthropicClient:
             thinking={"type": "adaptive"},
             output_config={"effort": "medium"},
             messages=[{"role": "user", "content": self._user_content(artigo_texto, texto, contexto_blog)}],
+        ) as stream:
+            resp = stream.get_final_message()
+        return self._texto_resposta(resp).strip()
+
+    # ===== Julgado da Semana =====
+
+    def extrair_dados_julgado(self, pdf_texto: str) -> dict:
+        """Extrai dados estruturados de um acordao a partir do texto bruto do PDF.
+
+        Devolve dict conforme JULGADO_SCHEMA: {area, orgao, orgao_completo,
+        turma, processo_id, data_julgamento, relator, relator_curto, tese,
+        citacao_principal, carimbo, fundamentos}.
+
+        Os campos required do schema sao sempre devolvidos pelo Anthropic
+        (structured output). Validacao adicional (campos vazios) fica no
+        chamador (julgado_parser.parse_julgado).
+        """
+        instrucao = (
+            "A partir do TEXTO DO ACORDAO acima, extraia os dados estruturados "
+            "do julgado para uso em comunicacao social juridica.\n\n"
+            "Regras de extracao:\n"
+            "- area: ramo do direito principal (ex: 'Direito Imobiliario', "
+            "'Direito Sucessorio', 'Saude Suplementar').\n"
+            "- orgao: SIGLA curta do tribunal (STJ, STF, TJ-SP, TRF-3, etc).\n"
+            "- orgao_completo: nome longo (ex: 'Terceira Turma do STJ').\n"
+            "- turma: turma/secao + indicacao de unanimidade se aparecer.\n"
+            "- processo_id: identificador completo (REsp 2.215.421/SE, RE 123, etc).\n"
+            "- data_julgamento: formato DD/MM/AAAA.\n"
+            "- relator: nome completo com titulo (Min., Des.).\n"
+            "- relator_curto: forma compacta para citacao no slide.\n"
+            "- tese: tese juridica em UMA frase declarativa (max 140 chars).\n"
+            "- citacao_principal: trecho TEXTUAL do voto (entre aspas no PDF se houver).\n"
+            "- carimbo: 'Unanimidade' se decisao unanime; 'Maioria' caso contrario; "
+            "'Repetitivo Tema X' se for tese repetitiva; 'Precedente' se notavel.\n"
+            "- fundamentos: lista de 3 a 5 fundamentos juridicos com {fonte, texto}.\n\n"
+            "Se algum campo opcional (orgao_completo, turma, data_julgamento, "
+            "relator_curto) nao puder ser determinado, devolva string vazia."
+        )
+        bloco_pdf = {
+            "type": "text",
+            "text": f"TEXTO DO ACORDAO:\n\n{pdf_texto}",
+            "cache_control": {"type": "ephemeral"},
+        }
+        with self._client.messages.stream(
+            model=self._model,
+            max_tokens=8000,
+            system=self._system_blocks(""),
+            thinking={"type": "adaptive"},
+            output_config={
+                "effort": "medium",
+                "format": {"type": "json_schema", "schema": JULGADO_SCHEMA},
+            },
+            messages=[{"role": "user", "content": [
+                bloco_pdf,
+                {"type": "text", "text": instrucao},
+            ]}],
+        ) as stream:
+            resp = stream.get_final_message()
+        return json.loads(self._texto_resposta(resp))
+
+    def gerar_carrossel_julgado(
+        self,
+        dados: dict,
+        *,
+        n_min: int = 7,
+        n_max: int = 9,
+        ajuste: str = "",
+        system_extra: str = "",
+        contexto_blog: str = "",
+    ) -> dict:
+        """Gera carrossel multi-slide a partir de dados estruturados do julgado.
+
+        Cada slide vem com area/selo_tribunal/processo_id/carimbo populados
+        (mapeados do dict de entrada). Anexa `_ai_tells` como metadado.
+        """
+        dados_json = json.dumps(dados, ensure_ascii=False, indent=2)
+        # No slide, selo_tribunal = orgao (sigla curta). processo_id = processo_id.
+        instrucao = (
+            f"A partir do JULGADO ESTRUTURADO acima, produza a copy de um carrossel "
+            f"de Instagram para @novielloadv com {n_min} a {n_max} slides.\n"
+            f"Slide 1 = capa com gancho forte na tese. Slides do meio = "
+            f"contextualizacao, fundamentos e impacto pratico. Ultimo = CTA "
+            f"educativo. Cite o processo no ultimo slide.\n\n"
+            f"IMPORTANTE — todo slide deve incluir os 4 campos abaixo (copie do "
+            f"JULGADO ESTRUTURADO, sem alterar):\n"
+            f"- area: '{dados.get('area', '')}'\n"
+            f"- selo_tribunal: '{dados.get('orgao', '')}'\n"
+            f"- processo_id: '{dados.get('processo_id', '')}'\n"
+            f"- carimbo: '{dados.get('carimbo', '')}'\n\n"
+            f"Tambem produza: 'legenda' (texto do post no IG) e 'hashtags'.\n\n"
+            "OBRIGATORIO: ao final da legenda, inclua disclaimer educativo no "
+            "espirito do Provimento OAB 205/2021 (texto curto, '⚠️ Este conteudo "
+            "e educativo e nao substitui a analise individualizada...')."
+        )
+        if ajuste.strip():
+            instrucao += f"\n\nAJUSTES SOLICITADOS:\n{ajuste.strip()}"
+
+        bloco_dados = {
+            "type": "text",
+            "text": f"JULGADO ESTRUTURADO:\n\n{dados_json}",
+            "cache_control": {"type": "ephemeral"},
+        }
+        blocos_user: list[dict] = []
+        if contexto_blog and contexto_blog.strip():
+            blocos_user.append(self._contexto_block(contexto_blog))
+        blocos_user.append(bloco_dados)
+        blocos_user.append({"type": "text", "text": instrucao})
+
+        with self._client.messages.stream(
+            model=self._model,
+            max_tokens=24000,
+            system=self._system_blocks(system_extra, voice_rules=VOICE_RULES_INSTAGRAM),
+            thinking={"type": "adaptive"},
+            output_config={
+                "effort": "medium",
+                "format": {"type": "json_schema", "schema": CAROUSEL_SCHEMA_JULGADO},
+            },
+            messages=[{"role": "user", "content": blocos_user}],
+        ) as stream:
+            resp = stream.get_final_message()
+        carrossel = json.loads(self._texto_resposta(resp))
+        texto_concat = " ".join(
+            [carrossel.get("legenda", "")]
+            + [s.get("titulo", "") + " " + s.get("corpo", "") for s in carrossel.get("slides", [])]
+        )
+        carrossel["_ai_tells"] = ai_tells_detector.detectar(texto_concat)
+        return carrossel
+
+    def gerar_linkedin_julgado(
+        self,
+        dados: dict,
+        url_blog: str = "",
+        *,
+        ajuste: str = "",
+        system_extra: str = "",
+        contexto_blog: str = "",
+    ) -> str:
+        """Gera post LinkedIn (B2B, tom tecnico) a partir do julgado estruturado.
+
+        `url_blog` opcional: se vier preenchido, instrui o modelo a encerrar
+        com o link. Caso contrario, omite a instrucao (Mario publica o blog
+        manual depois).
+        """
+        dados_json = json.dumps(dados, ensure_ascii=False, indent=2)
+        link_linha = (
+            f"\nTermine com o link do artigo completo: {url_blog}"
+            if url_blog.strip() else ""
+        )
+        instrucao = (
+            "A partir do JULGADO ESTRUTURADO acima, escreva um post de LinkedIn "
+            "para o perfil pessoal do Dr. Mario Noviello (publico B2B: advogados, "
+            "incorporadores, gestores). Tom tecnico, autoridade, sem cliches."
+            + link_linha + "\n"
+            "Cite explicitamente o numero do processo, a relatoria, a data e a "
+            "votacao (unanimidade/maioria). Use UMA citacao textual do voto se "
+            "disponivel em 'citacao_principal'. Encerre com 1-2 linhas de impacto "
+            "pratico para o advogado da area.\n"
+            "Maximo ~1500 caracteres, no maximo 3 hashtags. Responda apenas com o "
+            "texto do post.\n\n"
+            "ESTILO OBRIGATORIO:\n"
+            "- NAO use travessoes longos (—, –). Use ponto, virgula ou parenteses.\n"
+            "- NAO use asteriscos para enfase.\n"
+            "- Linguagem natural, sem marcadores de IA."
+        )
+        if ajuste.strip():
+            instrucao += f"\n\nAJUSTES SOLICITADOS:\n{ajuste.strip()}"
+
+        bloco_dados = {
+            "type": "text",
+            "text": f"JULGADO ESTRUTURADO:\n\n{dados_json}",
+            "cache_control": {"type": "ephemeral"},
+        }
+        blocos_user: list[dict] = []
+        if contexto_blog and contexto_blog.strip():
+            blocos_user.append(self._contexto_block(contexto_blog))
+        blocos_user.append(bloco_dados)
+        blocos_user.append({"type": "text", "text": instrucao})
+
+        with self._client.messages.stream(
+            model=self._model,
+            max_tokens=8000,
+            system=self._system_blocks(system_extra, voice_rules=VOICE_RULES_LINKEDIN),
+            thinking={"type": "adaptive"},
+            output_config={"effort": "medium"},
+            messages=[{"role": "user", "content": blocos_user}],
         ) as stream:
             resp = stream.get_final_message()
         return self._texto_resposta(resp).strip()
