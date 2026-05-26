@@ -22,19 +22,19 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
   body {
-    width: 1080px; height: 1080px;
+    width: 1080px; height: 1350px;
     font-family: 'Poppins', sans-serif;
     color: var(--creme);
     overflow: hidden;
   }
 
   .card {
-    width: 1080px; height: 1080px;
+    width: 1080px; height: 1350px;
     background:
       radial-gradient(ellipse 80% 60% at top right, rgba(212, 175, 55, 0.13) 0%, transparent 60%),
       radial-gradient(ellipse 80% 60% at bottom left, rgba(212, 175, 55, 0.10) 0%, transparent 60%),
       linear-gradient(180deg, var(--claret) 0%, var(--chocolate) 100%);
-    padding: 44px 50px 0;
+    padding: 34px 50px 0;
     position: relative;
     display: flex;
     flex-direction: column;
@@ -57,71 +57,71 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 28px;
+    margin-bottom: 20px;
   }
   .chapeu-esq { display: flex; align-items: center; gap: 14px; }
   .chip-area {
     font-family: 'Poppins', sans-serif;
-    font-size: 14px;
+    font-size: 16px;
     font-weight: 600;
     letter-spacing: 4px;
     text-transform: uppercase;
     color: var(--gold);
-    padding: 9px 18px;
+    padding: 10px 20px;
     border: 1.5px solid var(--gold);
     border-radius: 2px;
   }
   .carimbo-unanime {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 7px;
     font-family: 'Poppins', sans-serif;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 700;
     letter-spacing: 2.5px;
     text-transform: uppercase;
     color: var(--creme);
     background: var(--gold);
-    padding: 5px 12px;
+    padding: 6px 14px;
     border-radius: 3px;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
   }
-  .carimbo-unanime .bullet { color: var(--chocolate); font-size: 14px; line-height: 1; }
+  .carimbo-unanime .bullet { color: var(--chocolate); font-size: 16px; line-height: 1; }
   .selo-stj {
-    display: flex; align-items: center; gap: 14px;
+    display: flex; align-items: center; gap: 16px;
     font-family: 'Cinzel', serif;
     font-weight: 700;
     color: var(--gold);
   }
   .selo-stj .icone {
-    width: 46px; height: 46px;
+    width: 52px; height: 52px;
     border: 2.5px solid var(--gold); border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    font-size: 22px;
+    font-size: 26px;
   }
   .selo-stj .nome {
-    font-size: 28px; letter-spacing: 5px;
+    font-size: 32px; letter-spacing: 5px;
   }
 
   /* ===== Tese principal ===== */
   .tese-bloco {
-    margin-bottom: 28px;
-    padding-bottom: 24px;
+    margin-bottom: 20px;
+    padding-bottom: 18px;
     border-bottom: 2px solid var(--gold-soft);
   }
   .tese-bloco .label {
     font-family: 'Poppins', sans-serif;
-    font-size: 13px;
+    font-size: 15px;
     font-weight: 700;
     letter-spacing: 4px;
     text-transform: uppercase;
     color: var(--gold);
-    margin-bottom: 12px;
+    margin-bottom: 14px;
   }
   .tese-bloco h1 {
     font-family: 'Cinzel', serif;
-    font-size: 44px;
-    line-height: 1.15;
+    font-size: 48px;
+    line-height: 1.1;
     font-weight: 600;
     color: var(--creme);
     text-transform: uppercase;
@@ -129,10 +129,10 @@
   }
   .tese-bloco .processo {
     font-family: 'Poppins', sans-serif;
-    font-size: 15px;
+    font-size: 17px;
     font-weight: 500;
     color: var(--gold);
-    margin-top: 14px;
+    margin-top: 16px;
     letter-spacing: 1.5px;
   }
 
@@ -142,7 +142,7 @@
     grid-template-columns: 1fr 1fr 1fr;
     gap: 0;
     flex: 1;
-    margin-bottom: 22px;
+    margin-bottom: 16px;
   }
   .conteudo > div {
     padding: 0 22px;
@@ -160,31 +160,31 @@
     background: rgba(212, 175, 55, 0.08);
     border: 1px solid rgba(212, 175, 55, 0.4);
     border-radius: 4px;
-    padding: 16px 18px;
-    margin-bottom: 22px;
+    padding: 14px 16px;
+    margin-bottom: 18px;
   }
   .ministro-card .label-pequeno {
-    font-size: 11px; letter-spacing: 3px; text-transform: uppercase;
-    color: var(--creme-muted); margin-bottom: 6px; font-weight: 600;
+    font-size: 13px; letter-spacing: 3px; text-transform: uppercase;
+    color: var(--creme-muted); margin-bottom: 7px; font-weight: 600;
   }
   .ministro-card .nome-ministra {
     font-family: 'Cinzel', serif;
     font-weight: 600;
-    font-size: 19px;
+    font-size: 22px;
     line-height: 1.2;
     color: var(--gold);
-    margin-bottom: 4px;
+    margin-bottom: 5px;
   }
   .ministro-card .turma {
-    font-size: 12px; color: var(--creme-soft);
+    font-size: 14px; color: var(--creme-soft);
   }
   .citacao {
     font-family: 'Cinzel', serif;
     font-style: italic;
-    font-size: 20px;
-    line-height: 1.4;
+    font-size: 22px;
+    line-height: 1.35;
     color: var(--creme);
-    padding: 16px 0 0 22px;
+    padding: 14px 0 0 22px;
     border-left: 3px solid var(--gold);
     position: relative;
     flex: 1;
@@ -192,9 +192,9 @@
   .citacao::before {
     content: "\201C";
     position: absolute;
-    left: -4px; top: -20px;
+    left: -4px; top: -22px;
     font-family: 'Cinzel', serif;
-    font-size: 72px;
+    font-size: 84px;
     color: var(--gold);
     line-height: 1;
   }
@@ -202,11 +202,11 @@
     display: block;
     font-family: 'Poppins', sans-serif;
     font-style: normal;
-    font-size: 12px;
+    font-size: 13px;
     letter-spacing: 2.5px;
     text-transform: uppercase;
     color: var(--gold);
-    margin-top: 18px;
+    margin-top: 20px;
     font-weight: 700;
   }
 
@@ -218,27 +218,27 @@
     justify-content: flex-start;
   }
   .col-recibo .label-bloco {
-    font-size: 11px; letter-spacing: 3px; text-transform: uppercase;
-    color: var(--gold); margin-bottom: 16px; font-weight: 700;
+    font-size: 13px; letter-spacing: 3px; text-transform: uppercase;
+    color: var(--gold); margin-bottom: 18px; font-weight: 700;
     text-align: center;
   }
   .recibo-mock {
     background: var(--paper);
     color: #4a3a2a;
     width: 100%;
-    padding: 22px 18px;
+    padding: 16px 16px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 3px 0 var(--paper-shadow);
     transform: rotate(-1.5deg);
     font-family: 'Courier New', monospace;
-    font-size: 11px;
-    line-height: 1.55;
+    font-size: 12px;
+    line-height: 1.5;
     border: 1px solid var(--paper-shadow);
     position: relative;
   }
   .recibo-mock .titulo-doc {
     font-weight: 700;
     text-align: center;
-    font-size: 13px;
+    font-size: 14px;
     letter-spacing: 1.5px;
     margin-bottom: 12px;
     padding-bottom: 8px;
@@ -247,7 +247,7 @@
   .recibo-mock .valor-destaque {
     text-align: right;
     font-weight: 700;
-    font-size: 18px;
+    font-size: 20px;
     margin: 10px 0;
     color: #3a2a1a;
   }
@@ -264,13 +264,13 @@
     padding-top: 10px;
     border-top: 1px dashed #b09a78;
     font-style: italic;
-    font-size: 13px;
+    font-size: 14px;
     transform: rotate(2deg);
     text-align: center;
   }
   .col-recibo .legenda-recibo {
     margin-top: 18px;
-    font-size: 13px;
+    font-size: 15px;
     color: var(--creme-soft);
     text-align: center;
     font-style: italic;
@@ -283,25 +283,25 @@
     flex-direction: column;
   }
   .col-fundamentos .label-bloco {
-    font-size: 11px; letter-spacing: 3px; text-transform: uppercase;
-    color: var(--gold); margin-bottom: 16px; font-weight: 700;
+    font-size: 13px; letter-spacing: 3px; text-transform: uppercase;
+    color: var(--gold); margin-bottom: 18px; font-weight: 700;
   }
   .fund-item {
-    margin-bottom: 14px;
-    padding-bottom: 14px;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
     border-bottom: 1px solid rgba(212, 175, 55, 0.2);
   }
   .fund-item:last-child { border-bottom: none; }
   .fund-item .fonte {
     font-family: 'Cinzel', serif;
     font-weight: 600;
-    font-size: 15px;
+    font-size: 18px;
     color: var(--gold);
     letter-spacing: 0.5px;
-    margin-bottom: 5px;
+    margin-bottom: 6px;
   }
   .fund-item .texto {
-    font-size: 13px;
+    font-size: 15px;
     line-height: 1.5;
     color: var(--creme-soft);
   }
@@ -309,7 +309,7 @@
   /* ===== Rodapé com LOGO ===== */
   .rodape {
     margin: 0 -50px;
-    padding: 28px 50px;
+    padding: 20px 50px;
     background: rgba(0, 0, 0, 0.35);
     border-top: 3px solid var(--gold);
     display: flex;
@@ -324,9 +324,9 @@
   }
   .rodape .logo {
     display: block;
-    /* logo pre-redimensionado 375x100 — tamanho nativo */
-    width: 375px;
-    height: 100px;
+    /* logo pre-redimensionado 340x90 — tamanho nativo */
+    width: 340px;
+    height: 90px;
     filter: drop-shadow(0 2px 5px rgba(0,0,0,0.4));
   }
   .rodape .sub {
@@ -346,16 +346,16 @@
   .rodape .tema-rodape .principal {
     font-family: 'Cinzel', serif;
     font-weight: 600;
-    font-size: 22px;
+    font-size: 26px;
     color: var(--gold);
     text-transform: uppercase;
     letter-spacing: 2px;
   }
   .rodape .tema-rodape .subprincipal {
     font-family: 'Poppins', sans-serif;
-    font-size: 12px;
+    font-size: 13px;
     color: var(--creme-soft);
-    margin-top: 4px;
+    margin-top: 5px;
     letter-spacing: 0.5px;
   }
 </style>

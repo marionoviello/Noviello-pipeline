@@ -103,11 +103,11 @@ def renderizar(html: str, destino: Path) -> Path:
     arq_jpg = destino.with_suffix(".jpg")
     with sync_playwright() as p:
         browser = p.chromium.launch()
-        page = browser.new_page(viewport={"width": 1080, "height": 1080})
+        page = browser.new_page(viewport={"width": 1080, "height": 1350})
         page.goto(f"file://{arq_html.as_posix()}", wait_until="networkidle")
         page.wait_for_timeout(800)
         page.screenshot(path=str(arq_jpg), full_page=False, type="jpeg", quality=92,
-                        clip={"x": 0, "y": 0, "width": 1080, "height": 1080})
+                        clip={"x": 0, "y": 0, "width": 1080, "height": 1350})
         browser.close()
     return arq_jpg
 
