@@ -25,6 +25,7 @@ from flask import (
 from src.cadencia_state import CadenciaState
 from src.config import load_config
 from src.health import status_geral
+from src.julgado_state import EstadoJulgado, JulgadoStore
 from src.manifest import carregar_manifest
 from src.producer_state import EstadoProd, ProducaoStore
 from src.state import Estado, StateStore
@@ -70,15 +71,48 @@ def listar_pendencias(cfg) -> dict:
                 pass
             final_items.append(item)
 
-    return {"copy": copy_items, "final": final_items}
+    # ===== Julgado da Semana (Wave 5) =====
+    julgado_items = []
+    for est in JulgadoStore(cfg.state_dir).list_all():
+        # mostra AGUARDANDO_REVISAO sem decisao OU ERRO (para Mario corrigir)
+        if est.status == EstadoJulgado.AGUARDANDO_REVISAO and est.decisao:
+            continue
+        if est.status not in (EstadoJulgado.AGUARDANDO_REVISAO, EstadoJulgado.ERRO):
+            continue
+        dados = est.dados_julgado or {}
+        cc = est.copy_carrossel or {}
+        julgado_items.append({
+            "id": est.event_id,
+            "status": est.status,
+            "titulo": dados.get("tese", "(sem tese extraida)"),
+            "processo": dados.get("processo_id", ""),
+            "relator": dados.get("relator", ""),
+            "area": dados.get("area", ""),
+            "orgao": dados.get("orgao", ""),
+            "carimbo": dados.get("carimbo", ""),
+            "citacao": dados.get("citacao_principal", ""),
+            "fundamentos": dados.get("fundamentos", []),
+            "slides": cc.get("slides", []),
+            "legenda": cc.get("legenda", ""),
+            "hashtags": cc.get("hashtags", []),
+            "linkedin": est.texto_linkedin,
+            "ai_tells": est.ai_tells_resumo or {},
+            "erro_mensagem": est.erro_mensagem,
+            "semana_iso": est.semana_iso,
+            "ano_iso": est.ano_iso,
+        })
+
+    return {"copy": copy_items, "final": final_items, "julgado": julgado_items}
 
 
 def registrar_decisao(cfg, tipo: str, peca_id: str, decisao: str, ajuste_texto: str = "") -> None:
-    """Grava a decisao no arquivo de estado da peca (producer-state ou watcher-state)."""
+    """Grava a decisao no arquivo de estado da peca."""
     if tipo == "copy":
         store = ProducaoStore(cfg.state_dir)
     elif tipo == "final":
         store = StateStore(cfg.state_dir)
+    elif tipo == "julgado":
+        store = JulgadoStore(cfg.state_dir)
     else:
         raise ValueError(f"tipo invalido: {tipo}")
     est = store.load(peca_id)

@@ -40,6 +40,10 @@ SKILLS_BASE = [
 from src.state import agora_iso
 from src.wp_client import WordPressClient
 from src.wp_source import CategoriaNaoEncontrada, WordPressSource
+# Julgado da Semana — branch novo do producer (Wave 5)
+from src.calendar_client import CalendarClient
+from src.julgado_producer import main_julgado
+from src.julgado_state import JulgadoStore
 
 PILAR = "Blog Noviello"
 
@@ -473,6 +477,17 @@ def main() -> int:
             continue
         except Exception as exc:  # noqa: BLE001
             log_stage(logger, str(artigo.post_id), "producao.etapaA", "erro_inesperado", erro=str(exc))
+
+    # ===== Etapa Julgado da Semana (Wave 5) =====
+    # Branch separado: nao depende do fluxo blog (Fila Social). Falha aqui
+    # nao atrapalha o resto — produz log de erro e segue.
+    if cfg.julgado_ativo:
+        try:
+            cal_client = CalendarClient(cfg.google)
+            julgado_store = JulgadoStore(cfg.state_dir)
+            main_julgado(cfg, anthropic_cli, cal_client, julgado_store, logger)
+        except Exception as exc:  # noqa: BLE001
+            log_stage(logger, "julgado", "etapa_julgado", "erro_inesperado", erro=str(exc))
 
     logger.info("producer", status="fim", artigos_fila=len(artigos))
     return 0

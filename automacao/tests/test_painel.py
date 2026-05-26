@@ -82,3 +82,86 @@ def test_rota_decidir_grava(tmp_path):
     )
     assert resp.status_code in (302, 303)
     assert store.load("11745").decisao == "aprovar"
+
+
+# ===== Julgado da Semana (Wave 5) =====
+
+from src.julgado_state import EstadoJulgado, JulgadoState, JulgadoStore
+
+
+def test_listar_pendencias_inclui_julgado(tmp_path):
+    cfg = _cfg(tmp_path)
+    JulgadoStore(cfg.state_dir).save(JulgadoState(
+        event_id="evt-1", semana_iso=22, ano_iso=2026,
+        status=EstadoJulgado.AGUARDANDO_REVISAO,
+        dados_julgado={
+            "tese": "Tese aqui", "processo_id": "REsp X",
+            "relator": "Min. Y", "area": "Imobiliario",
+            "orgao": "STJ", "carimbo": "Unanimidade",
+            "citacao_principal": "Citacao",
+            "fundamentos": [{"fonte": "F1", "texto": "T1"}],
+        },
+        copy_carrossel={
+            "slides": [{"titulo": "S1", "corpo": "C1"}],
+            "legenda": "L", "hashtags": ["#x"],
+        },
+        texto_linkedin="LI text",
+    ))
+
+    pend = listar_pendencias(cfg)
+    assert "julgado" in pend
+    assert len(pend["julgado"]) == 1
+    item = pend["julgado"][0]
+    assert item["id"] == "evt-1"
+    assert item["titulo"] == "Tese aqui"
+    assert item["processo"] == "REsp X"
+    assert item["relator"] == "Min. Y"
+    assert item["area"] == "Imobiliario"
+    assert item["orgao"] == "STJ"
+    assert item["carimbo"] == "Unanimidade"
+    assert item["linkedin"] == "LI text"
+    assert item["legenda"] == "L"
+    assert len(item["slides"]) == 1
+    assert item["semana_iso"] == 22
+
+
+def test_listar_pendencias_julgado_com_decisao_some(tmp_path):
+    cfg = _cfg(tmp_path)
+    JulgadoStore(cfg.state_dir).save(JulgadoState(
+        event_id="evt-1", semana_iso=22, ano_iso=2026,
+        status=EstadoJulgado.AGUARDANDO_REVISAO,
+        dados_julgado={"tese": "T"},
+        decisao="aprovar",
+    ))
+    pend = listar_pendencias(cfg)
+    assert pend["julgado"] == []
+
+
+def test_listar_pendencias_julgado_em_erro_aparece(tmp_path):
+    cfg = _cfg(tmp_path)
+    JulgadoStore(cfg.state_dir).save(JulgadoState(
+        event_id="evt-erro", semana_iso=22, ano_iso=2026,
+        status=EstadoJulgado.ERRO,
+        erro_mensagem="pasta sem-22 nao existe",
+    ))
+    pend = listar_pendencias(cfg)
+    assert any(i["id"] == "evt-erro" for i in pend["julgado"])
+    item = next(i for i in pend["julgado"] if i["id"] == "evt-erro")
+    assert item["erro_mensagem"] == "pasta sem-22 nao existe"
+    assert item["status"] == EstadoJulgado.ERRO
+
+
+def test_registrar_decisao_julgado(tmp_path):
+    cfg = _cfg(tmp_path)
+    store = JulgadoStore(cfg.state_dir)
+    store.save(JulgadoState(
+        event_id="evt-1", semana_iso=22, ano_iso=2026,
+        status=EstadoJulgado.AGUARDANDO_REVISAO,
+    ))
+    registrar_decisao(cfg, "julgado", "evt-1", "aprovar")
+    assert store.load("evt-1").decisao == "aprovar"
+
+    registrar_decisao(cfg, "julgado", "evt-1", "ajustar", "trocar relator")
+    est = store.load("evt-1")
+    assert est.decisao == "ajustar"
+    assert est.ajuste_texto == "trocar relator"

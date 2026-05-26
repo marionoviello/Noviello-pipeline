@@ -151,7 +151,7 @@
   </div>
   {% endif %}
 
-  {% if not copy and not final %}
+  {% if not copy and not final and not julgado %}
     <div class="vazio">Nada pendente. Tudo em dia.</div>
   {% endif %}
 
@@ -223,6 +223,71 @@
           <button type="submit" name="decisao" value="ajustar" class="b-ajustar">Ajustar</button>
         </div>
       </form>
+    </div>
+    {% endfor %}
+  {% endif %}
+
+  {% if julgado %}
+    <h2>Julgado da Semana ({{ julgado|length }})</h2>
+    {% for item in julgado %}
+    <div class="card {% if item.status == 'erro' %}card-erro{% endif %}">
+      <div class="badges">
+        {% if item.area %}<span class="badge">{{ item.area }}</span>{% endif %}
+        {% if item.orgao %}<span class="badge">{{ item.orgao }}</span>{% endif %}
+        {% if item.carimbo %}<span class="badge badge-carimbo">{{ item.carimbo }}</span>{% endif %}
+        <span class="badge badge-semana">{{ item.ano_iso }}-S{{ "%02d"|format(item.semana_iso) }}</span>
+      </div>
+      {% if item.status == 'erro' %}
+        <div class="erro-bloco">
+          <strong>Erro na extração:</strong>
+          <pre>{{ item.erro_mensagem }}</pre>
+          <small>Corrija o PDF em <code>producao/julgados/sem-{{ "%02d"|format(item.semana_iso) }}/</code> e o producer vai tentar de novo na próxima rodada.</small>
+        </div>
+      {% else %}
+        <div class="tit">{{ item.titulo }}</div>
+        <div class="meta">{{ item.relator }} · {{ item.processo }}</div>
+        {% if item.citacao %}
+          <blockquote>"{{ item.citacao }}"</blockquote>
+        {% endif %}
+        {% if item.ai_tells %}
+        <div class="ai-tells-bar">
+          {% for canal, resumo in item.ai_tells.items() %}
+            {% if resumo.total > 0 %}
+              <span class="ai-tell {{ 'ai-tell-forensic' if resumo.forensic else ('ai-tell-strict' if resumo.strict else 'ai-tell-aesthetic') }}">
+                {{ canal }}:
+                {% if resumo.forensic %}{{ resumo.forensic }} críticos{% endif %}
+                {% if resumo.strict %}{% if resumo.forensic %} ·{% endif %} {{ resumo.strict }} corp{% endif %}
+                {% if resumo.aesthetic %}{% if resumo.forensic or resumo.strict %} ·{% endif %} {{ resumo.aesthetic }} estilo{% endif %}
+              </span>
+            {% else %}
+              <span class="ai-tell ai-tell-ok">{{ canal }}: limpo</span>
+            {% endif %}
+          {% endfor %}
+        </div>
+        {% endif %}
+        <div class="rotulo">Carrossel — {{ item.slides|length }} slides</div>
+        {% for s in item.slides %}
+          <div class="slide"><b>{{ loop.index }}. {{ s.titulo }}</b><br>{{ s.corpo }}</div>
+        {% endfor %}
+        <div class="rotulo">Legenda IG</div>
+        <div class="texto-bloco">{{ item.legenda }}
+{{ item.hashtags|join(' ') }}</div>
+        <div class="rotulo">Post LinkedIn</div>
+        <div class="texto-bloco">{{ item.linkedin }}</div>
+        <div class="rotulo">Fundamentos ({{ item.fundamentos|length }})</div>
+        {% for f in item.fundamentos %}
+          <div class="slide"><b>{{ f.fonte }}</b><br>{{ f.texto }}</div>
+        {% endfor %}
+        <form method="post" action="/decidir">
+          <input type="hidden" name="tipo" value="julgado">
+          <input type="hidden" name="peca_id" value="{{ item.id }}">
+          <textarea name="ajuste_texto" placeholder="Para ajustar: descreva o que mudar (copy + dados serão revisados)"></textarea>
+          <div class="botoes">
+            <button type="submit" name="decisao" value="aprovar" class="b-aprovar">Aprovar julgado</button>
+            <button type="submit" name="decisao" value="ajustar" class="b-ajustar">Ajustar</button>
+          </div>
+        </form>
+      {% endif %}
     </div>
     {% endfor %}
   {% endif %}
