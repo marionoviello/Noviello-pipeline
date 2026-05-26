@@ -37,6 +37,48 @@ def _bg_style(imagem: Path | None) -> str:
     return f"background-image: url('{Path(imagem).resolve().as_uri()}');"
 
 
+def _meta_julgado_html(slide: dict) -> str:
+    """Monta a barra de metadados de julgado (Batch a — coerencia com card LI).
+
+    Campos opcionais no dict do slide:
+      - area:             ex. "Direito Imobiliário"  -> chip dourado
+      - selo_tribunal:    ex. "STJ" / "STF" / "TJ-SP" -> selo no canto
+      - processo_id:      ex. "REsp 2.215.421/SE"     -> identificacao
+
+    So renderiza a barra se algum dos campos existir. Retrocompativel:
+    slides sem esses campos nao tem barra (sai vazio).
+    """
+    area = (slide.get("area") or "").strip()
+    selo = (slide.get("selo_tribunal") or "").strip()
+    processo = (slide.get("processo_id") or "").strip()
+    if not (area or selo or processo):
+        return ""
+    partes = []
+    if area:
+        partes.append(f'<span class="chip-area">{_html.escape(area)}</span>')
+    if selo:
+        partes.append(f'<span class="selo-trib">{_html.escape(selo)}</span>')
+    if processo:
+        partes.append(f'<span class="processo">{_html.escape(processo)}</span>')
+    return f'<div class="meta-julgado">{"".join(partes)}</div>'
+
+
+def _carimbo_html(slide: dict) -> str:
+    """Carimbo flutuante (UNANIMIDADE, REPETITIVO, PRECEDENTE).
+
+    Campo opcional no dict do slide:
+      - carimbo: ex. "Unanimidade" / "Repetitivo Tema 1234" / "Precedente"
+    """
+    carimbo = (slide.get("carimbo") or "").strip()
+    if not carimbo:
+        return ""
+    return (
+        f'<div class="carimbo-decisao">'
+        f'<span class="bullet">&#9679;</span> {_html.escape(carimbo)}'
+        f'</div>'
+    )
+
+
 def _preencher(
     template: str,
     slide: dict,
@@ -51,6 +93,8 @@ def _preencher(
     - tema: 'claro' | 'escuro' | 'foto-fullbleed' | 'foto-fundo'. Se None,
       alternancia automatica: impar=claro, par=escuro (compatibilidade).
     - imagem_bg: caminho da imagem para os temas 'foto-*'. Ignorado nos outros.
+    - slide dict aceita campos opcionais: area, selo_tribunal, processo_id,
+      carimbo (todos vazios por default — slides sem julgado nao mudam).
     """
     corpo = _html.escape(slide.get("corpo", "")).replace("\n", "<br>")
     titulo = _html.escape(slide.get("titulo", ""))
@@ -64,6 +108,8 @@ def _preencher(
         .replace("{corpo}", corpo)
         .replace("{tema}", tema)
         .replace("{bg_style}", bg_style)
+        .replace("{meta_julgado_html}", _meta_julgado_html(slide))
+        .replace("{carimbo_html}", _carimbo_html(slide))
     )
 
 
