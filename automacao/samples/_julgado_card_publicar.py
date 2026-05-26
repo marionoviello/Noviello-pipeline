@@ -87,6 +87,11 @@ def montar_html(dados: dict, canal: str = "li") -> str:
         out = out.replace("{" + k + "}", _html.escape(str(v)) if k != "citacao_principal" else _html.escape(v))
     out = out.replace("{fundamentos_html}", fundamentos_html)
     out = out.replace("{subtitulo_marca}", _html.escape(subtitulo))
+    # Carimbo dinamico (default Unanimidade quando dados nao trazem campo "carimbo")
+    out = out.replace(
+        "{carimbo_label}",
+        _html.escape(dados.get("carimbo", "Unanimidade") or "Unanimidade"),
+    )
     return out
 
 
