@@ -237,6 +237,36 @@ def criar_app(cfg) -> Flask:
         )
         return redirect(url_for("radar", flash=flash))
 
+    # ===== Registry de publicacoes unicas (anti-duplicata) =====
+    @app.get("/publicacoes")
+    def publicacoes():
+        from src.publicacoes_unicas import RegistroStore
+        registry = RegistroStore(cfg.state_dir)
+        registros = registry.listar()
+        # estatisticas
+        por_tipo = {}
+        for r in registros:
+            por_tipo[r.tipo] = por_tipo.get(r.tipo, 0) + 1
+        tentativas_bloqueadas = sum(max(0, r.tentativas - 1) for r in registros)
+        return render_template(
+            "publicacoes.html",
+            registros=registros,
+            total=len(registros),
+            por_tipo=por_tipo,
+            tentativas_bloqueadas=tentativas_bloqueadas,
+            flash=request.args.get("flash", ""),
+        )
+
+    @app.post("/publicacoes/remover")
+    def publicacoes_remover():
+        from src.publicacoes_unicas import RegistroStore
+        chave = request.form.get("chave", "").strip()
+        if not chave:
+            return redirect(url_for("publicacoes", flash="chave vazia"))
+        removeu = RegistroStore(cfg.state_dir).remover(chave)
+        flash = f"chave '{chave}' removida" if removeu else f"chave '{chave}' nao encontrada"
+        return redirect(url_for("publicacoes", flash=flash))
+
     return app
 
 

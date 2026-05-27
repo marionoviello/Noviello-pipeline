@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Publicações únicas — Noviello Pipeline</title>
+<style>
+  body { font-family: 'Inter', system-ui, sans-serif; max-width: 1080px; margin: 24px auto; padding: 0 20px; color: #281019; background: #FAF7F5; }
+  h1 { font-family: Georgia, serif; color: #68192E; border-bottom: 2px solid #D4AF37; padding-bottom: 8px; }
+  .voltar { color: #68192E; text-decoration: none; font-size: 13px; }
+  .voltar:hover { text-decoration: underline; }
+  .stats { display: flex; gap: 14px; margin: 20px 0; flex-wrap: wrap; }
+  .stat { background: #fff; padding: 14px 18px; border-radius: 4px; border-left: 3px solid #68192E; min-width: 140px; }
+  .stat .num { font-size: 24px; font-weight: 700; color: #68192E; }
+  .stat .label { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: #5A4650; margin-top: 4px; }
+  table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 13px; background: #fff; }
+  th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #F1F3F2; vertical-align: top; }
+  th { background: #68192E; color: #fff; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+  .chave { font-family: 'Consolas', monospace; font-size: 11px; }
+  .tipo { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+  .tipo-processo { background: #FFE4E1; color: #A52A2A; }
+  .tipo-wp_post { background: #E6F4EA; color: #1F6B3A; }
+  .tipo-manual { background: #F1F3F2; color: #5A4650; }
+  .canais .badge { display: inline-block; background: #D4AF37; color: #281019; padding: 2px 8px; border-radius: 3px; font-size: 10px; font-weight: 600; margin-right: 4px; }
+  .titulo { color: #68192E; font-weight: 500; max-width: 320px; }
+  .tentativas { font-weight: 700; }
+  .tentativas.alta { color: #A52A2A; }
+  .btn-remover { background: #fff; color: #A52A2A; border: 1px solid #A52A2A; border-radius: 3px; padding: 4px 10px; font-size: 11px; cursor: pointer; }
+  .btn-remover:hover { background: #A52A2A; color: #fff; }
+  .urls a { color: #68192E; font-size: 11px; text-decoration: none; display: block; }
+  .urls a:hover { text-decoration: underline; }
+  .flash { background: #FFF3E0; color: #8B5A00; padding: 10px 14px; border-radius: 4px; margin: 14px 0; font-size: 13px; }
+  .doc { background: #fff; padding: 14px 18px; border-radius: 4px; margin: 18px 0; font-size: 13px; color: #5A4650; border-left: 3px solid #D4AF37; }
+  .doc code { background: #F1F3F2; padding: 1px 6px; border-radius: 3px; font-size: 12px; }
+</style>
+</head>
+<body>
+  <a href="/" class="voltar">&larr; voltar ao painel</a>
+  <h1>Registry de publicações únicas</h1>
+
+  {% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+
+  <div class="doc">
+    <strong>Anti-duplicata.</strong> O pipeline registra aqui toda peça publicada com sucesso.
+    Antes de processar qualquer Julgado da Semana, blog ou peça nova, o producer consulta este
+    registry. Se a chave já existe (mesmo processo STJ, mesmo post WP, etc), aborta a geração
+    em ~2s, economizando IA e evitando duplicatas.
+    <br><br>
+    Para <strong>forçar republicação</strong> de uma chave (caso raro — pra refazer post deletado),
+    clique em "Remover" na linha correspondente.
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="num">{{ total }}</div><div class="label">total no registry</div></div>
+    {% for tipo, n in por_tipo.items() %}
+    <div class="stat"><div class="num">{{ n }}</div><div class="label">{{ tipo }}</div></div>
+    {% endfor %}
+    {% if tentativas_bloqueadas %}
+    <div class="stat" style="border-left-color:#A52A2A"><div class="num" style="color:#A52A2A">{{ tentativas_bloqueadas }}</div><div class="label">duplicatas bloqueadas</div></div>
+    {% endif %}
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Tipo</th>
+        <th>Chave</th>
+        <th>Título / peça</th>
+        <th>Canais publicados</th>
+        <th>URLs</th>
+        <th>Primeira publicação</th>
+        <th>Tentativas</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in registros %}
+      <tr>
+        <td><span class="tipo tipo-{{ r.tipo }}">{{ r.tipo }}</span></td>
+        <td class="chave">{{ r.chave }}</td>
+        <td>
+          <div class="titulo">{{ r.titulo or '(sem título)' }}</div>
+          <small style="color:#999">{{ r.peca_id }}</small>
+        </td>
+        <td class="canais">
+          {% for c in r.canais_publicados %}<span class="badge">{{ c }}</span>{% endfor %}
+        </td>
+        <td class="urls">
+          {% for canal, url in r.urls.items() %}
+            {% if url %}<a href="{{ url }}" target="_blank">{{ canal }} &rarr;</a>{% endif %}
+          {% endfor %}
+        </td>
+        <td><code>{{ r.primeira_publicacao_iso[:16] }}</code></td>
+        <td><span class="tentativas {{ 'alta' if r.tentativas > 1 else '' }}">{{ r.tentativas }}{% if r.tentativas > 1 %} ⚠{% endif %}</span></td>
+        <td>
+          <form method="post" action="/publicacoes/remover" onsubmit="return confirm('Remover {{ r.chave }}? Permite republicar o mesmo conteúdo.')">
+            <input type="hidden" name="chave" value="{{ r.chave }}">
+            <button class="btn-remover">Remover</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if not registros %}
+    <p style="text-align:center;color:#5A4650;padding:40px 0">Registry vazio.</p>
+  {% endif %}
+</body>
+</html>
