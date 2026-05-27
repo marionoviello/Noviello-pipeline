@@ -121,14 +121,15 @@ def extrair_itens_de_informativo(
     pdf_path: Path,
     anthropic_cli,
     *,
-    ler_pdf=_ler_pdf,
+    ler_pdf=None,
 ) -> dict:
     """Le PDF de informativo do STJ e devolve {'aceitos': [...], 'descartados': [...]}.
 
     aceitos: itens com area em AREAS_ALVO + campos required preenchidos
     descartados: itens com area='fora' ou sem campos required (motivo registrado)
     """
-    texto = ler_pdf(Path(pdf_path))
+    leitor = ler_pdf if ler_pdf is not None else _ler_pdf
+    texto = leitor(Path(pdf_path))
     blocos = particionar_itens(texto)
 
     aceitos: list[dict] = []
