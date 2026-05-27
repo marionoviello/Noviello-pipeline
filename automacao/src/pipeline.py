@@ -123,6 +123,48 @@ def _registrar_publicacao_unica(peca, estado, cfg, logger) -> None:
     )
     log_stage(logger, peca.peca_id, "stage.08", "registrado_unicidade")
 
+    # CROSS-FORMAT: se a peça é um blog (wp_post) e o producer detectou
+    # processos no texto, registra TAMBÉM as chaves processo:* dessas
+    # menções. Assim, futuro Card Julgado da Semana do mesmo processo
+    # vai bloquear.
+    processos_mencionados = _processos_mencionados_da_peca(peca, estado, cfg)
+    for chave_proc in processos_mencionados:
+        if chave_proc == chave:
+            continue  # ja é a chave principal
+        registry.registrar(
+            chave_proc,
+            tipo="processo",
+            peca_id=peca.peca_id,
+            titulo=peca.titulo_curto,
+            canais_publicados=canais_ok,
+            urls=urls,
+            notas=f"detectado em texto de {peca.peca_id} (cross-format)",
+        )
+        log_stage(logger, peca.peca_id, "stage.08",
+                  "registrado_unicidade_cross_format")
+
+
+def _processos_mencionados_da_peca(peca, estado, cfg) -> list[str]:
+    """Recupera as chaves de processos mencionados no state do producer Blog.
+
+    Acessa via ProducaoStore (o producer Blog popula 'processos_mencionados'
+    no state durante a etapa A). Falha silenciosa se state não for de blog.
+    """
+    try:
+        from src.producer_state import ProducaoStore
+        # peca_id de blog é 'social-{post_id}', então post_id = peca_id[7:]
+        if not peca.peca_id.startswith("social-"):
+            return []
+        post_id = peca.peca_id.replace("social-", "", 1)
+        prod_store = ProducaoStore(cfg.state_dir)
+        if not prod_store.exists(post_id):
+            return []
+        prod_state = prod_store.load(post_id)
+        return [p.get("chave_registry", "") for p in (prod_state.processos_mencionados or [])
+                if p.get("chave_registry")]
+    except Exception:  # noqa: BLE001
+        return []
+
 
 def _alerta_erro(estado, peca, cfg, gmail, falhas: list[str], logger) -> None:
     from src.alertas import alertar

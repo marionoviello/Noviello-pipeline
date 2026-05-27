@@ -171,6 +171,53 @@ def processar_artigo_novo(
         else _artigo_url(post_id)
     )
 
+    # CROSS-FORMAT ANTI-DUPLICATA: escanea o texto do artigo procurando
+    # menções a processos (REsp, RE, CNJ TJ-SP). Cada processo detectado
+    # vira uma chave canônica que pode ser cruzada com o registry de
+    # publicações. Se o processo já foi tema (ex: Card Julgado da Semana),
+    # o painel mostra warning antes do Mario aprovar — evita 2 peças no ar
+    # sobre o mesmo julgado em formatos diferentes.
+    try:
+        from src.detector_processo import detectar as _detectar_proc, gerar_chaves_canonicas
+        from src.publicacoes_unicas import RegistroStore
+        detectados = _detectar_proc(estado.artigo_texto or "")
+        if detectados:
+            chaves = gerar_chaves_canonicas(detectados)
+            estado.processos_mencionados = [
+                {
+                    "texto_match": d.texto_match,
+                    "classe": d.classe,
+                    "numero": d.numero,
+                    "uf": d.uf,
+                    "chave_registry": c,
+                }
+                for d, c in zip(detectados, chaves)
+            ]
+            registry = RegistroStore(cfg.state_dir)
+            estado.processos_ja_publicados = [
+                {
+                    "chave": c,
+                    "anterior": registry.obter(c).peca_id if registry.existe(c) else "",
+                    "primeira_publicacao": (
+                        registry.obter(c).primeira_publicacao_iso if registry.existe(c) else ""
+                    ),
+                }
+                for c in chaves
+                if registry.existe(c)
+            ]
+            log_stage(
+                logger, post_id, "producao.etapaA", "processos_detectados",
+                erro=None,
+            )
+            logger.info(
+                "processos_detectados",
+                post_id=post_id,
+                total=len(detectados),
+                ja_publicados=len(estado.processos_ja_publicados),
+            )
+    except Exception as exc:  # noqa: BLE001 — detector nao deve quebrar producer
+        log_stage(logger, post_id, "producao.etapaA", "detector_falhou", erro=str(exc))
+
     # Auto-gera hero se artigo nao tem featured_media e flag ativa
     # (precisa rodar ANTES do styler para o hero entrar na estilizacao)
     if wp_client is not None:

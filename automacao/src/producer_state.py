@@ -61,6 +61,12 @@ class ProducaoState:
     # {"carrossel": {forensic: N, strict: N, aesthetic: N, codigos: [...]},
     #  "linkedin":  {...}}
     ai_tells_resumo: dict = field(default_factory=dict)
+    # Processos detectados no texto do artigo (cross-format anti-duplicata).
+    # Cada item: {"texto_match", "classe", "numero", "uf", "chave_registry"}
+    processos_mencionados: list = field(default_factory=list)
+    # Lista de processos que JÁ FORAM publicados (presentes no registry).
+    # Permite o painel mostrar warning antes de Mario aprovar.
+    processos_ja_publicados: list = field(default_factory=list)
     tentativas_ajuste: int = 0
     atualizado_em: str = field(default_factory=agora_iso)
     historico: list = field(default_factory=list)

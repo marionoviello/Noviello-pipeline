@@ -90,6 +90,11 @@
   .cadencia-historico ul { margin:8px 0 0; padding-left:20px; }
   .cadencia-historico li { margin-bottom:4px; }
 
+  .warn-dup { background:#FFE4E1; border-left:4px solid #A52A2A; padding:10px 14px; margin:8px 0; border-radius:0 4px 4px 0; font-size:13px; color:#5C0F1A; }
+  .warn-dup ul { margin:6px 0 6px 18px; }
+  .warn-dup code { background:#fff; padding:1px 6px; border-radius:3px; font-size:11px; }
+  .proc-detectados { margin:4px 0 8px; color:#5A4650; }
+  .proc-chip { display:inline-block; background:#F1F3F2; color:#5A4650; padding:2px 8px; border-radius:999px; font-size:11px; margin-right:4px; font-family:monospace; }
   .ai-tells-bar { display:flex; gap:8px; flex-wrap:wrap; margin:8px 0 16px; }
   .ai-tell { font-size:11px; padding:4px 10px; border-radius:999px; font-weight:600; text-transform:uppercase; letter-spacing:0.6px; display:inline-flex; align-items:center; gap:6px; }
   .ai-tell-ok { background:#E6F4EA; color:#1F6B3A; }
@@ -166,6 +171,26 @@
     {% for item in copy %}
     <div class="card">
       <div class="tit">{{ item.titulo }}</div>
+      {% if item.processos_ja_publicados %}
+      <div class="warn-dup">
+        <strong>⚠ Tema já coberto.</strong>
+        Este artigo cita processo(s) que já foram publicados em outra peça:
+        <ul>
+          {% for p in item.processos_ja_publicados %}
+          <li><code>{{ p.chave }}</code> — peça <code>{{ p.anterior }}</code> publicada em {{ p.primeira_publicacao[:16] }}</li>
+          {% endfor %}
+        </ul>
+        Considere ajustar o ângulo editorial ou descartar.
+        <a href="/publicacoes" style="color:#A52A2A;font-weight:600">Ver registry &rarr;</a>
+      </div>
+      {% endif %}
+      {% if item.processos_mencionados %}
+      <div class="proc-detectados">
+        <small><strong>Processos detectados no texto:</strong>
+        {% for p in item.processos_mencionados %}<span class="proc-chip">{{ p.texto_match }}</span>{% endfor %}
+        </small>
+      </div>
+      {% endif %}
       {% if item.ai_tells %}
       <div class="ai-tells-bar">
         {% for canal, resumo in item.ai_tells.items() %}

@@ -49,6 +49,8 @@ def listar_pendencias(cfg) -> dict:
                     "hashtags": cc.get("hashtags", []),
                     "linkedin": est.texto_linkedin,
                     "ai_tells": est.ai_tells_resumo or {},
+                    "processos_mencionados": est.processos_mencionados or [],
+                    "processos_ja_publicados": est.processos_ja_publicados or [],
                 }
             )
 
