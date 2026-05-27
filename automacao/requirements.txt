@@ -12,3 +12,4 @@ flask>=3.0.0
 pillow>=10.3.0
 pytest>=8.2.0
 pypdf>=4.0.0
+striprtf>=0.0.26
