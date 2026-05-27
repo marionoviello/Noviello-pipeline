@@ -31,6 +31,7 @@ from src.julgado_state import (
     transition,
 )
 from src.logger import log_stage
+from src.publicacoes_unicas import RegistroStore, chave_processo
 from src.state import LockBusy, agora_iso
 
 PILAR = "Julgado da Semana"
@@ -88,6 +89,40 @@ def _processar_evento_novo(
         estado.pdf_path = str(pdf_path)
         dados = parse_julgado(pdf_path, anthropic_cli)
         estado.dados_julgado = dados
+
+        # ANTI-DUPLICATA: checa se este processo ja foi publicado antes.
+        # Custo zero (consulta JSON local). Se ja existe, marca JA_PUBLICADO
+        # e aborta SEM chamar Anthropic (economia + evita duplicacao real).
+        registry = RegistroStore(cfg.state_dir)
+        chave = chave_processo(dados.get("processo_id", ""))
+        if chave and registry.existe(chave):
+            anterior = registry.obter(chave)
+            estado.status = EstadoJulgado.JA_PUBLICADO
+            estado.erro_mensagem = (
+                f"Processo {dados.get('processo_id', '')} ja publicado em "
+                f"{anterior.primeira_publicacao_iso} (peca_id={anterior.peca_id}, "
+                f"canais={anterior.canais_publicados}). "
+                "Para republicar, remova a chave do registry manualmente."
+            )
+            store.save(estado)
+            log_stage(
+                logger, event_id, "julgado.etapaA", "ja_publicado",
+                erro=estado.erro_mensagem,
+            )
+            logger.info(
+                "julgado_ja_publicado",
+                event_id=event_id,
+                processo=dados.get("processo_id", ""),
+                chave=chave,
+                publicado_em=anterior.primeira_publicacao_iso,
+                tentativas=anterior.tentativas + 1,
+            )
+            # Registra a tentativa pra auditoria (incrementa contador)
+            registry.registrar(
+                chave, tipo="processo",
+                notas=f"tentativa abortada — event_id={event_id}",
+            )
+            return
 
         copy = anthropic_cli.gerar_carrossel_julgado(dados)
         tells_carrossel = copy.pop("_ai_tells", [])
@@ -286,6 +321,13 @@ def montar_peca(estado: JulgadoState, cfg, logger) -> Path:
             "linkedin": {
                 "imagem": str(jpg_card),
                 "texto": str(linkedin_path),
+            },
+            # Campo extra pra anti-duplicata: pipeline.py le isso pra registrar
+            # no publicacoes_unicas (chave 'processo:<normalizado>')
+            "julgado": {
+                "processo_id": dados.get("processo_id", ""),
+                "relator": dados.get("relator", ""),
+                "tribunal": dados.get("selo_tribunal", "") or dados.get("orgao", ""),
             },
         },
         "cross_link": {"ig_para_wp": False, "li_para_wp": False, "linktree_topo": False},

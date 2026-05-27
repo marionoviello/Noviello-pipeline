@@ -73,6 +73,57 @@ def arquivar_peca(peca, estado, cfg, logger) -> bool:
 
 # ---- aprovacao (stages 05-08) -------------------------------------------
 
+def _registrar_publicacao_unica(peca, estado, cfg, logger) -> None:
+    """Registra a publicacao no registry de unicidade pra evitar duplicatas.
+
+    Extrai a chave canonica do MANIFEST.json:
+      - Julgado:  ativos.julgado.processo_id  -> 'processo:<normalizado>'
+      - Blog WP:  ativos.wordpress.post_id_existente -> 'wp:<id>'
+      - Outras:   manual:<peca_id>
+
+    Idempotente. Falha aqui nao deve quebrar o pipeline.
+    """
+    from src.publicacoes_unicas import (
+        RegistroStore, chave_processo, chave_wp_post, chave_manual,
+    )
+    registry = RegistroStore(cfg.state_dir)
+
+    chave = ""
+    tipo = "manual"
+
+    # 1. Julgado da Semana (ativos.julgado.processo_id)
+    julgado = peca.ativos("julgado") or {}
+    proc = (julgado.get("processo_id") or "").strip()
+    if proc:
+        chave = chave_processo(proc)
+        tipo = "processo"
+    else:
+        # 2. Blog do WP (post_id_existente)
+        wp = peca.ativos("wordpress") or {}
+        post_id = wp.get("post_id_existente")
+        if post_id:
+            chave = chave_wp_post(post_id)
+            tipo = "wp_post"
+        else:
+            # 3. Fallback: manual com peca_id
+            chave = chave_manual(peca.peca_id)
+            tipo = "manual"
+
+    canais_ok = [c for c, r in estado.canais_publicados.items() if r.get("ok")]
+    urls = {c: r.get("url", "") for c, r in estado.canais_publicados.items()
+            if r.get("ok") and r.get("url")}
+
+    registry.registrar(
+        chave,
+        tipo=tipo,
+        peca_id=peca.peca_id,
+        titulo=peca.titulo_curto,
+        canais_publicados=canais_ok,
+        urls=urls,
+    )
+    log_stage(logger, peca.peca_id, "stage.08", "registrado_unicidade")
+
+
 def _alerta_erro(estado, peca, cfg, gmail, falhas: list[str], logger) -> None:
     from src.alertas import alertar
     detalhe = "\n".join(
@@ -130,6 +181,17 @@ def handle_approve(estado, cfg, gmail, store: StateStore, logger) -> None:
     transition(estado, Estado.PUBLICADA)
     estado.proof = {"canais": estado.canais_publicados, "publicado_em": agora_iso()}
     store.save(estado)
+
+    # ANTI-DUPLICATA: registra esta publicacao no registry de unicidade,
+    # pra evitar republicacao acidental do mesmo conteudo (mesmo processo
+    # STJ, mesmo post_id WP, etc). Idempotente — se ja existir, incrementa
+    # contador de tentativas. Falha aqui nao bloqueia arquivamento.
+    try:
+        _registrar_publicacao_unica(peca, estado, cfg, logger)
+    except Exception as exc:  # noqa: BLE001
+        log_stage(logger, peca.peca_id, "stage.08",
+                  "registrar_unicidade_falhou", erro=str(exc))
+
     movido = arquivar_peca(peca, estado, cfg, logger)
     if movido:
         store.delete(estado.peca_id)

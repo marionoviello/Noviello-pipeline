@@ -19,15 +19,21 @@ class EstadoJulgado:
     AGUARDANDO_REVISAO = "aguardando_revisao"
     APROVADO = "aprovado"
     PECA_MONTADA = "peca_montada"
+    JA_PUBLICADO = "ja_publicado"  # abortado: processo ja foi publicado antes
     ERRO = "erro"
 
 
 _TRANSICOES: dict[str, set[str]] = {
-    EstadoJulgado.DETECTADO: {EstadoJulgado.AGUARDANDO_REVISAO, EstadoJulgado.ERRO},
+    EstadoJulgado.DETECTADO: {
+        EstadoJulgado.AGUARDANDO_REVISAO,
+        EstadoJulgado.JA_PUBLICADO,
+        EstadoJulgado.ERRO,
+    },
     EstadoJulgado.AGUARDANDO_REVISAO: {EstadoJulgado.APROVADO, EstadoJulgado.ERRO},
     EstadoJulgado.APROVADO: {EstadoJulgado.PECA_MONTADA, EstadoJulgado.ERRO},
     EstadoJulgado.ERRO: {EstadoJulgado.AGUARDANDO_REVISAO, EstadoJulgado.APROVADO},
     EstadoJulgado.PECA_MONTADA: set(),
+    EstadoJulgado.JA_PUBLICADO: set(),  # terminal: nao processa mais
 }
 
 
