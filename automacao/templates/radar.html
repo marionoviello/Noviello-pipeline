@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Radar de Julgados — Noviello</title>
+<style>
+  :root {
+    --claret: #68192E; --chocolate: #540D1D; --gold: #D4AF37;
+    --creme: #FAF7F5; --paper: #F3E9D6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--creme); color: #281019; padding: 20px;
+    max-width: 1400px; margin: 0 auto;
+  }
+  header { display: flex; justify-content: space-between; align-items: baseline;
+           border-bottom: 3px solid var(--gold); padding-bottom: 14px; margin-bottom: 20px; }
+  h1 { color: var(--claret); font-size: 28px; }
+  .voltar { color: var(--claret); text-decoration: none; font-size: 14px; }
+  .filtros {
+    background: white; padding: 18px; border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 20px;
+    display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr auto; gap: 10px;
+    align-items: end;
+  }
+  .filtros label { display: block; font-size: 12px; font-weight: 600;
+                   color: #5A4650; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; }
+  .filtros input, .filtros select {
+    width: 100%; padding: 8px 10px; border: 1px solid #c8b89a;
+    border-radius: 4px; font-size: 14px;
+  }
+  .filtros button {
+    padding: 9px 22px; background: var(--claret); color: white;
+    border: 0; border-radius: 4px; font-weight: 600; cursor: pointer;
+  }
+  .filtros button:hover { background: var(--chocolate); }
+  .total { color: #5A4650; font-size: 13px; margin-bottom: 12px; }
+  .card {
+    background: white; padding: 18px; border-radius: 6px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 12px;
+    border-left: 4px solid var(--claret);
+  }
+  .card.usado { border-left-color: var(--gold); opacity: 0.7; }
+  .badges { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  .badge {
+    font-size: 11px; padding: 3px 10px; border-radius: 12px;
+    background: var(--paper); color: var(--chocolate); font-weight: 600;
+    letter-spacing: 0.5px; text-transform: uppercase;
+  }
+  .badge.tribunal { background: var(--claret); color: white; }
+  .badge.area { background: var(--gold); color: var(--chocolate); }
+  .badge.usado-marca { background: #999; color: white; }
+  .tese { font-size: 17px; font-weight: 600; color: var(--claret);
+          line-height: 1.4; margin: 8px 0; }
+  .meta { font-size: 12px; color: #5A4650; margin-bottom: 8px; }
+  .ementa { font-size: 13px; color: #281019; line-height: 1.5;
+            background: #faf7f5; padding: 10px 12px; border-radius: 4px;
+            border-left: 2px solid var(--gold); margin: 8px 0; }
+  .acoes { margin-top: 12px; display: flex; gap: 10px; align-items: center; }
+  .acoes form { display: inline; }
+  .btn-usar {
+    background: var(--gold); color: var(--chocolate); border: 0;
+    padding: 7px 14px; border-radius: 4px; font-weight: 700;
+    cursor: pointer; font-size: 13px;
+  }
+  .btn-usar:hover { background: #b8961f; }
+  .link-fonte { color: var(--claret); font-size: 12px; }
+  .vazio {
+    text-align: center; padding: 60px 20px; color: #999;
+    background: white; border-radius: 8px;
+  }
+  .flash {
+    background: #d4edda; color: #155724; padding: 12px 16px;
+    border-radius: 4px; margin-bottom: 16px; border-left: 4px solid #28a745;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Radar de Julgados</h1>
+  <a class="voltar" href="/">← Voltar ao painel</a>
+</header>
+
+{% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+
+<form class="filtros" method="get" action="/radar">
+  <div>
+    <label for="q">Busca livre</label>
+    <input type="text" id="q" name="q" value="{{ filtros.termo }}"
+           placeholder="ex: usucapião, ITBI, holding familiar">
+  </div>
+  <div>
+    <label for="area">Área</label>
+    <select id="area" name="area">
+      <option value="">(todas)</option>
+      {% for a in areas_validas %}
+      <option value="{{ a }}" {% if filtros.area == a %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="tribunal">Tribunal</label>
+    <select id="tribunal" name="tribunal">
+      <option value="">(todos)</option>
+      {% for t in tribunais_validos %}
+      <option value="{{ t }}" {% if filtros.tribunal == t %}selected{% endif %}>{{ t }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="ano">Ano</label>
+    <select id="ano" name="ano">
+      <option value="">(todos)</option>
+      {% for a in anos_validos %}
+      <option value="{{ a }}" {% if filtros.ano|string == a|string %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="classe">Classe</label>
+    <input type="text" id="classe" name="classe" value="{{ filtros.classe }}"
+           placeholder="ex: Apelação">
+  </div>
+  <button type="submit">Buscar</button>
+</form>
+
+<div class="total">{{ total }} resultados</div>
+
+{% if resultados %}
+  {% for j in resultados %}
+  <article class="card {% if j.usado_em_post %}usado{% endif %}">
+    <div class="badges">
+      <span class="badge tribunal">{{ j.tribunal }}</span>
+      <span class="badge area">{{ j.area }}</span>
+      {% if j.classe %}<span class="badge">{{ j.classe }}</span>{% endif %}
+      {% if j.usado_em_post %}<span class="badge usado-marca">Já usado: {{ j.usado_em_post }}</span>{% endif %}
+    </div>
+    <div class="tese">{{ j.tese }}</div>
+    <div class="meta">
+      <strong>{{ j.processo_id }}</strong> · {{ j.relator }} · {{ j.orgao }} · {{ j.data_julgamento }}
+    </div>
+    {% if j.ementa_resumida %}
+    <div class="ementa">{{ j.ementa_resumida }}</div>
+    {% endif %}
+    <div class="acoes">
+      <form method="post" action="/radar/usar">
+        <input type="hidden" name="julgado_id" value="{{ j.id }}">
+        <button type="submit" class="btn-usar">Usar este → Julgado da Semana</button>
+      </form>
+      {% if j.url_fonte %}
+      <a class="link-fonte" href="{{ j.url_fonte }}" target="_blank" rel="noopener">Ver original</a>
+      {% endif %}
+    </div>
+  </article>
+  {% endfor %}
+{% else %}
+  <div class="vazio">Nenhum julgado encontrado com esses filtros.<br>
+    Ajuste a busca ou rode o backfill: <code>python -m src.julgado_radar.backfill</code>
+  </div>
+{% endif %}
+
+</body>
+</html>

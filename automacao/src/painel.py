@@ -208,6 +208,35 @@ def criar_app(cfg) -> Flask:
         )
         return redirect(url_for("index"))
 
+    # ===== Radar de Julgados (Wave 6) =====
+    @app.get("/radar")
+    def radar():
+        from src.julgado_radar import radar_view  # import local pra nao acoplar
+        ctx = radar_view.buscar_para_view(
+            cfg.state_dir,
+            termo=request.args.get("q", "").strip(),
+            area=request.args.get("area") or None,
+            tribunal=request.args.get("tribunal") or None,
+            ano=int(request.args["ano"]) if request.args.get("ano") else None,
+            classe=request.args.get("classe") or None,
+            limit=int(request.args.get("limit", "30") or "30"),
+        )
+        ctx["flash"] = request.args.get("flash", "")
+        return render_template("radar.html", **ctx)
+
+    @app.post("/radar/usar")
+    def radar_usar():
+        from src.julgado_radar import radar_view
+        julgado_id = int(request.form["julgado_id"])
+        resultado = radar_view.materializar_julgado(
+            cfg.state_dir, julgado_id, cfg.julgado_dir,
+        )
+        flash = (
+            f"Julgado {julgado_id} materializado em sem-{resultado['semana_iso']:02d}. "
+            f"PDF + JSON criados; producer detecta no proximo ciclo."
+        )
+        return redirect(url_for("radar", flash=flash))
+
     return app
 
 
