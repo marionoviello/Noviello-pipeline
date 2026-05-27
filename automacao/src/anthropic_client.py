@@ -456,3 +456,91 @@ class AnthropicClient:
         ) as stream:
             resp = stream.get_final_message()
         return self._texto_resposta(resp).strip()
+
+    # ===== Radar de Julgados =====
+
+    def extrair_item_stj(self, bloco_texto: str, schema: dict) -> dict:
+        """Classifica + extrai campos de UM item de informativo STJ.
+
+        bloco_texto: trecho do PDF correspondente a 1 julgado destacado.
+        schema: JSON schema (STJ_ITEM_SCHEMA do parser do radar).
+
+        Devolve dict conforme schema. Cache no system block via brief padrao.
+        """
+        instrucao = (
+            "A partir do TEXTO DO ITEM acima (1 julgado de informativo STJ), "
+            "preencha o JSON estruturado:\n"
+            "- relevante: true se area entra em (urbanistico/imobiliario/sucessorio), false caso contrario.\n"
+            "- area: 'urbanistico' | 'imobiliario' | 'sucessorio' | 'fora'.\n"
+            "  * urbanistico: REURB, parcelamento solo, OODC, CEPAC, operacao urbana, EIV.\n"
+            "  * imobiliario: usucapiao, ITBI, incorporacao, alienacao fiduciaria de imovel, condominio edilicio.\n"
+            "  * sucessorio: inventario, heranca, testamento, holding familiar, partilha.\n"
+            "  * fora: qualquer outra area.\n"
+            "- processo_id: ex 'REsp 2.215.421/SE'.\n"
+            "- relator: nome do Ministro relator (com titulo).\n"
+            "- orgao: turma/secao (ex '3a Turma', '2a Secao').\n"
+            "- data_julgamento: DD/MM/AAAA.\n"
+            "- classe: 'Recurso Especial' | 'Habeas Corpus' | 'Mandado de Seguranca' etc.\n"
+            "- tese: nucleo da decisao em UMA frase declarativa (max 280 chars).\n"
+            "- ementa: texto integral da ementa quando aparece no bloco.\n"
+            "- citacao_voto: 1 trecho marcante do voto, com aspas, se houver.\n"
+            "- fundamentos: lista de 1 a 4 itens {fonte, texto} (artigos, sumulas, precedentes citados)."
+        )
+        bloco = {
+            "type": "text",
+            "text": f"TEXTO DO ITEM:\n\n{bloco_texto}",
+            "cache_control": {"type": "ephemeral"},
+        }
+        with self._client.messages.stream(
+            model=self._model,
+            max_tokens=6000,
+            system=self._system_blocks(""),
+            thinking={"type": "adaptive"},
+            output_config={
+                "effort": "medium",
+                "format": {"type": "json_schema", "schema": schema},
+            },
+            messages=[{"role": "user", "content": [
+                bloco,
+                {"type": "text", "text": instrucao},
+            ]}],
+        ) as stream:
+            resp = stream.get_final_message()
+        return json.loads(self._texto_resposta(resp))
+
+    def classificar_area(self, ementa: str, areas_validas: list[str]) -> str:
+        """Pede pro modelo classificar a area do julgado (1 string curta).
+
+        Usado pelo TJ-SP parser, onde temos so a ementa.
+        """
+        schema = {
+            "type": "object",
+            "properties": {"area": {"type": "string", "enum": areas_validas}},
+            "required": ["area"],
+            "additionalProperties": False,
+        }
+        instrucao = (
+            "Classifique o TEMA do julgado na area mais especifica dentre as opcoes "
+            f"validas: {', '.join(areas_validas)}.\n"
+            "Use 'fora' se nao for nenhuma das areas-alvo (urbanistico, imobiliario, sucessorio)."
+        )
+        bloco = {
+            "type": "text",
+            "text": f"EMENTA:\n\n{ementa}",
+            "cache_control": {"type": "ephemeral"},
+        }
+        with self._client.messages.stream(
+            model=self._model,
+            max_tokens=512,
+            system=self._system_blocks(""),
+            output_config={
+                "effort": "low",
+                "format": {"type": "json_schema", "schema": schema},
+            },
+            messages=[{"role": "user", "content": [
+                bloco,
+                {"type": "text", "text": instrucao},
+            ]}],
+        ) as stream:
+            resp = stream.get_final_message()
+        return json.loads(self._texto_resposta(resp))["area"]

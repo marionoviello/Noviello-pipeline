@@ -197,3 +197,72 @@ def test_gerar_linkedin_julgado_sem_url_blog_nao_inclui_link(tmp_path):
         cliente.gerar_linkedin_julgado({"tese": "t", "fundamentos": []})
     texto = json.dumps(capturado["messages"], ensure_ascii=False)
     assert "Termine com o link" not in texto
+
+
+# ===== Radar de Julgados — extrair_item_stj + classificar_area =====
+
+def test_extrair_item_stj_devolve_dict_com_schema(tmp_path):
+    cliente = _make_client(tmp_path)
+    payload = {
+        "relevante": True, "area": "imobiliario",
+        "processo_id": "REsp 2.215.421/SE",
+        "relator": "Min. Nancy Andrighi", "orgao": "3a Turma",
+        "data_julgamento": "10/03/2026", "classe": "Recurso Especial",
+        "tese": "Recibo basta como justo titulo",
+        "ementa": "EMENTA: usucapiao ordinaria...",
+        "citacao_voto": "O justo titulo deve...",
+        "fundamentos": [{"fonte": "Art. 1.242 CC", "texto": "..."}],
+    }
+    schema = {"type": "object", "properties": {}, "required": []}
+    with patch.object(
+        cliente._client.messages, "stream", return_value=_fake_stream_cm(payload),
+    ):
+        out = cliente.extrair_item_stj("TEXTO DO BLOCO AQUI", schema)
+    assert out["processo_id"] == "REsp 2.215.421/SE"
+    assert out["area"] == "imobiliario"
+
+
+def test_extrair_item_stj_passa_schema_no_output_config(tmp_path):
+    cliente = _make_client(tmp_path)
+    capturado = {}
+
+    def fake_stream(**kwargs):
+        capturado.update(kwargs)
+        return _fake_stream_cm({"relevante": False, "area": "fora", "processo_id": "x", "tese": "t"})
+
+    schema = {"type": "object", "properties": {"area": {"type": "string"}}, "required": ["area"]}
+    with patch.object(cliente._client.messages, "stream", side_effect=fake_stream):
+        cliente.extrair_item_stj("bloco", schema)
+
+    output_cfg = capturado["output_config"]
+    assert output_cfg["format"]["schema"] == schema
+    assert output_cfg["format"]["type"] == "json_schema"
+
+
+def test_classificar_area_devolve_string(tmp_path):
+    cliente = _make_client(tmp_path)
+    payload = {"area": "imobiliario"}
+    with patch.object(
+        cliente._client.messages, "stream", return_value=_fake_stream_cm(payload),
+    ):
+        area = cliente.classificar_area(
+            "ementa sobre usucapiao",
+            ["urbanistico", "imobiliario", "sucessorio", "fora"],
+        )
+    assert area == "imobiliario"
+
+
+def test_classificar_area_passa_areas_validas_no_schema(tmp_path):
+    cliente = _make_client(tmp_path)
+    capturado = {}
+
+    def fake_stream(**kwargs):
+        capturado.update(kwargs)
+        return _fake_stream_cm({"area": "fora"})
+
+    areas = ["urbanistico", "imobiliario", "sucessorio", "fora"]
+    with patch.object(cliente._client.messages, "stream", side_effect=fake_stream):
+        cliente.classificar_area("ementa", areas)
+
+    schema = capturado["output_config"]["format"]["schema"]
+    assert schema["properties"]["area"]["enum"] == areas
