@@ -142,7 +142,7 @@ def test_executar_backfill_stj_completo_com_mocks(tmp_path, monkeypatch):
 
     monkeypatch.setattr(
         "src.julgado_radar.parser._ler_pdf",
-        lambda p: "PROCESSO\n" + ("Item A texto longo aqui. " * 50),
+        lambda p: "PROCESSO\n" + ("Usucapiao de imovel urbano. " * 50),
     )
 
     cli = MagicMock()
@@ -178,7 +178,7 @@ def test_executar_backfill_stj_idempotente(tmp_path, monkeypatch):
 
     monkeypatch.setattr(
         "src.julgado_radar.parser._ler_pdf",
-        lambda p: "PROCESSO\n" + ("X " * 200),
+        lambda p: "PROCESSO\n" + ("Usucapiao de imovel. " * 100),
     )
 
     cli = MagicMock()

@@ -7,8 +7,10 @@ import pytest
 
 from src.julgado_radar.config import AREA_FORA, AREAS_ALVO
 from src.julgado_radar.parser import (
+    KEYWORDS_AREAS,
     ParserError,
     STJ_ITEM_SCHEMA,
+    bloco_e_candidato,
     classificar_area_via_ia,
     extrair_item_via_ia,
     extrair_itens_de_informativo,
@@ -85,7 +87,7 @@ def test_extrair_itens_de_informativo_aceita_3_imobiliarios(tmp_path, monkeypatc
     ]
     pdf_fake = tmp_path / "fake.pdf"
     pdf_fake.write_bytes(b"%PDF-1.4")
-    resultado = extrair_itens_de_informativo(pdf_fake, cli, ler_pdf=_ler_pdf_fake)
+    resultado = extrair_itens_de_informativo(pdf_fake, cli, ler_pdf=_ler_pdf_fake, pre_filtro=False)
     assert len(resultado["aceitos"]) == 3
     assert len(resultado["descartados"]) == 0
 
@@ -99,7 +101,7 @@ def test_extrair_itens_descarta_area_fora(tmp_path):
     ]
     pdf_fake = tmp_path / "x.pdf"
     pdf_fake.write_bytes(b"x")
-    r = extrair_itens_de_informativo(pdf_fake, cli, ler_pdf=_ler_pdf_fake)
+    r = extrair_itens_de_informativo(pdf_fake, cli, ler_pdf=_ler_pdf_fake, pre_filtro=False)
     assert len(r["aceitos"]) == 1
     assert r["aceitos"][0]["processo_id"] == "REsp B"
     assert len(r["descartados"]) == 2
@@ -115,7 +117,7 @@ def test_extrair_itens_descarta_sem_processo_id(tmp_path):
     ]
     pdf_fake = tmp_path / "x.pdf"
     pdf_fake.write_bytes(b"x")
-    r = extrair_itens_de_informativo(pdf_fake, cli, ler_pdf=_ler_pdf_fake)
+    r = extrair_itens_de_informativo(pdf_fake, cli, ler_pdf=_ler_pdf_fake, pre_filtro=False)
     assert len(r["aceitos"]) == 1
     assert len(r["descartados"]) == 2
     motivos = {d["motivo"] for d in r["descartados"]}
@@ -132,7 +134,7 @@ def test_extrair_itens_lida_com_ia_que_explode(tmp_path):
     ]
     pdf_fake = tmp_path / "x.pdf"
     pdf_fake.write_bytes(b"x")
-    r = extrair_itens_de_informativo(pdf_fake, cli, ler_pdf=_ler_pdf_fake)
+    r = extrair_itens_de_informativo(pdf_fake, cli, ler_pdf=_ler_pdf_fake, pre_filtro=False)
     assert len(r["aceitos"]) == 2
     assert len(r["descartados"]) == 1
     assert r["descartados"][0]["motivo"] == "ia_falhou"
@@ -191,7 +193,7 @@ def test_extrair_itens_de_informativo_le_html_quando_extensao_html(tmp_path):
         "<ul><li>PROCESSO " + ("X " * 200) + "</li></ul>",
         encoding="utf-8",
     )
-    r = extrair_itens_de_informativo(html_path, cli)
+    r = extrair_itens_de_informativo(html_path, cli, pre_filtro=False)
     assert len(r["aceitos"]) == 1
     assert r["aceitos"][0]["processo_id"] == "REsp 1"
 
@@ -204,3 +206,87 @@ def test_ler_html_normaliza_quebras_excessivas(tmp_path):
     texto = _ler_html(html_path)
     # nao deve ter mais de 2 newlines seguidos
     assert "\n\n\n" not in texto
+
+
+# ===== Pre-filtro por keyword =====
+
+def test_keywords_areas_inclui_termos_essenciais():
+    """Keywords derivadas de TERMOS_BUSCA_TJSP + sinonimos."""
+    for kw in ("usucapiao", "itbi", "heranca", "inventario", "reurb",
+               "condominio", "fiduciaria", "imovel"):
+        assert kw in KEYWORDS_AREAS, f"{kw} faltando nas keywords"
+
+
+def test_bloco_e_candidato_detecta_imobiliario():
+    bloco = ("PROCESSO REsp 1.999.485/DF. Em operacoes de financiamento "
+             "imobiliario garantidas por alienacao fiduciaria, nao e possivel "
+             "a flexibilizacao do percentual da taxa de ocupacao.")
+    assert bloco_e_candidato(bloco) is True
+
+
+def test_bloco_e_candidato_detecta_sucessorio():
+    bloco = "PROCESSO REsp 123. Discute-se a partilha de bens no inventario."
+    assert bloco_e_candidato(bloco) is True
+
+
+def test_bloco_e_candidato_ignora_acentos():
+    """Bloco com acento deve casar com keyword normalizada."""
+    bloco = "Trata-se de USUCAPIÃO extraordinária de imóvel rural."
+    assert bloco_e_candidato(bloco) is True
+
+
+def test_bloco_e_candidato_rejeita_penal():
+    bloco = ("PROCESSO HC 123.456/SP. Habeas corpus. Trafico de drogas. "
+             "Dosimetria da pena. Regime inicial fechado.")
+    assert bloco_e_candidato(bloco) is False
+
+
+def test_bloco_e_candidato_rejeita_processual_generico():
+    bloco = "PROCESSO em segredo de justica. Conflito de competencia."
+    assert bloco_e_candidato(bloco) is False
+
+
+def test_extrair_itens_pre_filtro_economiza_chamadas(tmp_path):
+    """Com pre_filtro=True, blocos sem keyword nao chamam o Anthropic."""
+    cli = MagicMock()
+    cli.extrair_item_stj.return_value = {
+        "relevante": True, "area": "imobiliario",
+        "processo_id": "REsp 1", "tese": "Tese sobre usucapiao",
+    }
+
+    def ler_misto(p):
+        # 2 blocos: 1 imobiliario (passa filtro), 1 penal (barrado)
+        imob = "PROCESSO REsp 1. " + ("Usucapiao de imovel urbano. " * 20)
+        penal = "PROCESSO HC 2. " + ("Trafico de drogas dosimetria pena. " * 20)
+        return f"{imob}\n\n{penal}"
+
+    pdf = tmp_path / "x.pdf"
+    pdf.write_bytes(b"x")
+    r = extrair_itens_de_informativo(pdf, cli, ler_pdf=ler_misto)
+
+    # so o bloco imobiliario chamou o Anthropic
+    assert cli.extrair_item_stj.call_count == 1
+    assert len(r["aceitos"]) == 1
+    # o penal foi descartado por pre_filtro
+    motivos = {d["motivo"] for d in r["descartados"]}
+    assert "pre_filtro_keyword" in motivos
+
+
+def test_extrair_itens_pre_filtro_desligavel(tmp_path):
+    """Com pre_filtro=False, todos os blocos chamam o Anthropic."""
+    cli = MagicMock()
+    cli.extrair_item_stj.return_value = {
+        "relevante": False, "area": "fora",
+        "processo_id": "HC 2", "tese": "Penal",
+    }
+
+    def ler_dois(p):
+        b1 = "PROCESSO HC 1. " + ("Trafico dosimetria. " * 20)
+        b2 = "PROCESSO HC 2. " + ("Roubo qualificado pena. " * 20)
+        return f"{b1}\n\n{b2}"
+
+    pdf = tmp_path / "x.pdf"
+    pdf.write_bytes(b"x")
+    r = extrair_itens_de_informativo(pdf, cli, ler_pdf=ler_dois, pre_filtro=False)
+    # ambos chamaram (sem filtro), ambos descartados por area fora
+    assert cli.extrair_item_stj.call_count == 2

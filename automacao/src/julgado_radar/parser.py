@@ -17,10 +17,11 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from pathlib import Path
 from typing import Iterable
 
-from src.julgado_radar.config import AREA_FORA, AREAS_ALVO
+from src.julgado_radar.config import AREA_FORA, AREAS_ALVO, TERMOS_BUSCA_TJSP
 
 
 class ParserError(Exception):
@@ -142,6 +143,59 @@ def _ler_html(html_path: Path) -> str:
     return _RE_NEWLINES.sub("\n\n", texto).strip()
 
 
+# ===== Pre-filtro por keyword (economiza tokens Anthropic) =====
+# Smoke real (2026-05-27): em 30 blocos do PDF anual 2023, so 1 era das
+# areas-alvo (3%). Mandar todos pro Opus 4.7 custaria ~$40/ano pra ~16
+# julgados uteis. Pre-filtrar por keyword elimina ~85% dos blocos de graca.
+
+def _sem_acento(s: str) -> str:
+    nfkd = unicodedata.normalize("NFKD", s)
+    return "".join(c for c in nfkd if not unicodedata.combining(c)).lower()
+
+
+def _construir_keywords() -> frozenset[str]:
+    """Deriva o set de keywords das areas-alvo a partir de TERMOS_BUSCA_TJSP.
+
+    Quebra termos compostos em palavras individuais >=4 chars, normalizadas
+    sem acento. Ex: 'regularizacao fundiaria' -> {'regularizacao', 'fundiaria'}.
+    Adiciona sinonimos juridicos frequentes nos informativos do STJ.
+    """
+    kws: set[str] = set()
+    for termos in TERMOS_BUSCA_TJSP.values():
+        for termo in termos:
+            for palavra in _sem_acento(termo).split():
+                if len(palavra) >= 4:
+                    kws.add(palavra)
+    # Sinonimos / variacoes que aparecem nas teses do STJ mas nao nos
+    # termos de busca do TJ-SP (que sao mais coloquiais).
+    kws.update({
+        "usucapiao", "imovel", "imoveis", "imobiliario", "imobiliaria",
+        "fiduciaria", "fiduciario", "hipoteca", "enfiteuse", "superficie",
+        "incorporacao", "loteamento", "condominio", "condominial",
+        "reurb", "urbanistico", "urbanistica", "edilicio", "registral",
+        "registro", "matricula", "averbacao", "servidao", "posse",
+        "heranca", "herdeiro", "herdeiros", "sucessao", "sucessorio",
+        "inventario", "testamento", "testamentaria", "legitima", "legado",
+        "partilha", "espolio", "colacao", "deserdacao", "holding",
+        "doacao", "usufruto", "meacao", "arrolamento",
+        "itbi", "itcmd", "iptu", "laudemio", "foro",
+    })
+    return frozenset(kws)
+
+
+KEYWORDS_AREAS = _construir_keywords()
+
+
+def bloco_e_candidato(bloco: str, keywords: frozenset[str] = KEYWORDS_AREAS) -> bool:
+    """True se o bloco contem ao menos 1 keyword das areas-alvo.
+
+    Pre-filtro barato (regex/substring) antes de gastar token Anthropic.
+    Conservador: na duvida (bloco curto sem keyword), retorna False.
+    """
+    texto = _sem_acento(bloco)
+    return any(kw in texto for kw in keywords)
+
+
 def extrair_item_via_ia(bloco_texto: str, anthropic_cli) -> dict:
     """Manda 1 bloco pro AnthropicClient classificar + extrair campos.
 
@@ -160,11 +214,17 @@ def extrair_itens_de_informativo(
     anthropic_cli,
     *,
     ler_pdf=None,
+    pre_filtro: bool = True,
 ) -> dict:
     """Le PDF de informativo do STJ e devolve {'aceitos': [...], 'descartados': [...]}.
 
     aceitos: itens com area em AREAS_ALVO + campos required preenchidos
-    descartados: itens com area='fora' ou sem campos required (motivo registrado)
+    descartados: itens com area='fora', sem campos required, ou filtrados
+                 por keyword antes do Anthropic (motivo registrado)
+
+    pre_filtro: se True (default), blocos sem keyword das areas-alvo sao
+    descartados ANTES de gastar token Anthropic (motivo='pre_filtro_keyword').
+    Economiza ~85% das chamadas. Passar False pra processar todos os blocos.
     """
     leitor = ler_pdf if ler_pdf is not None else _ler_pdf
     texto = leitor(Path(pdf_path))
@@ -174,6 +234,12 @@ def extrair_itens_de_informativo(
     descartados: list[dict] = []
 
     for bloco in blocos:
+        if pre_filtro and not bloco_e_candidato(bloco):
+            descartados.append({
+                "motivo": "pre_filtro_keyword",
+                "trecho": bloco[:120],
+            })
+            continue
         try:
             item = extrair_item_via_ia(bloco, anthropic_cli)
         except Exception as exc:  # noqa: BLE001
