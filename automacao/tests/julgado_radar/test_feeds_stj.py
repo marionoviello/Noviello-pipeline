@@ -54,10 +54,17 @@ class FakePage:
         self.calls.append(("wait_for_timeout", ms))
 
     def evaluate(self, script, *args):
-        # _listar_opcoes_do_select chama com seletor `#idInformativoEdicoesCombo{ano}`
+        # 2 usos distintos:
+        # 1) _listar_opcoes_do_select chama com selector "#idInfoEdicoes...{ano}"
+        # 2) baixar_informativo chama com [selectId, optValue] pra setar value
         if args and isinstance(args[0], str) and args[0].startswith("#"):
             select_id = args[0][1:]
             return self.selects.get(select_id, [])
+        if args and isinstance(args[0], list) and len(args[0]) == 2:
+            select_id, opt_value = args[0]
+            self.calls.append(("select_via_js", select_id, opt_value))
+            self._selecionado = opt_value
+            return None
         return []
 
     def eval_on_selector(self, selector, script):
@@ -68,6 +75,8 @@ class FakePage:
         return ""
 
     def select_option(self, selector, *, value):
+        # Mantido pra compatibilidade com testes legados, mas o codigo
+        # de producao agora usa evaluate (vide FakePage.evaluate).
         self.calls.append(("select_option", selector, value))
         self._selecionado = value
 
@@ -195,8 +204,8 @@ def test_baixar_informativo_grava_html_no_cache(tmp_path):
     # rate limit aplicou
     assert len(sleeps) == 1
     assert sleeps[0] >= 1.0
-    # select_option foi chamado com o value correto
-    select_calls = [c for c in page.calls if c[0] == "select_option"]
+    # select via JS foi chamado com o value correto
+    select_calls = [c for c in page.calls if c[0] == "select_via_js"]
     assert select_calls and select_calls[0][2] == "0837"
 
 
@@ -270,18 +279,21 @@ def test_baixar_informativo_rate_limit_customizado(tmp_path):
     assert sleeps == [2.5]
 
 
-def test_baixar_informativo_select_option_explode_propaga_feed_error(tmp_path):
+def test_baixar_informativo_select_via_js_explode_propaga_feed_error(tmp_path):
     ref = InformativoRef(
         numero=999, ano=2024,
         select_id="idInformativoEdicoesCombo2024", option_value="0999",
     )
 
     class PageQuebrada(FakePage):
-        def select_option(self, selector, *, value):
-            raise RuntimeError("timeout aguardando opt")
+        def evaluate(self, script, *args):
+            # se for o evaluate de set value, levanta
+            if args and isinstance(args[0], list):
+                raise RuntimeError("select nao encontrado")
+            return []  # listar opcoes (nao usado neste teste)
 
     page = PageQuebrada(blocos={})
-    with pytest.raises(FeedSTJError, match="select_option falhou"):
+    with pytest.raises(FeedSTJError, match="select via evaluate falhou"):
         baixar_informativo(
             ref, tmp_path / "cache",
             playwright_factory=_factory(page),

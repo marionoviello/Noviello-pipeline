@@ -231,10 +231,22 @@ def baixar_informativo(
     with factory() as page:
         _abrir_portal(page)
         try:
-            page.select_option(f"#{ref.select_id}", value=ref.option_value)
+            # Usa evaluate direto: o <select> existe mas pode estar invisivel
+            # (escondido atras de aba/accordion do ano). select_option do
+            # Playwright timeouta nesse caso. Setar value via JS + disparar
+            # change bypassa todas as checagens de visibilidade.
+            page.evaluate(
+                """([selectId, optValue]) => {
+                    const el = document.querySelector('#' + selectId);
+                    if (!el) throw new Error('select nao encontrado: ' + selectId);
+                    el.value = optValue;
+                    el.dispatchEvent(new Event('change', {bubbles: true}));
+                }""",
+                [ref.select_id, ref.option_value],
+            )
         except Exception as exc:  # noqa: BLE001
             raise FeedSTJError(
-                f"select_option falhou para informativo {ref.numero}: {exc}"
+                f"select via evaluate falhou para informativo {ref.numero}: {exc}"
             ) from exc
         # AJAX leva ~2-3s pra atualizar o bloco
         page.wait_for_timeout(3000)

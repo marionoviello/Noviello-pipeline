@@ -29,12 +29,16 @@ class _FakePage:
     def evaluate(self, script, *args):
         if args and isinstance(args[0], str) and args[0].startswith("#"):
             return self.selects.get(args[0][1:], [])
+        if args and isinstance(args[0], list) and len(args[0]) == 2:
+            self._sel = args[0][1]
+            return None
         return []
 
     def eval_on_selector(self, selector, script):
         return self.blocos.get(self._sel, "")
 
     def select_option(self, selector, *, value):
+        # legacy fallback (codigo de producao usa evaluate)
         self._sel = value
 
 
