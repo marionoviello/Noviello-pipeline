@@ -1,127 +1,108 @@
-# Runbook: Smoke real do Radar STJ (pós-calibração)
+# Runbook: Backfill do Radar STJ (estratégia final — PDF anual)
 
-**Status:** pronto para Mario executar
-**Data:** 2026-05-27
-**Pré-requisitos:** `.venv` ativado, Anthropic key em `.env`, Playwright Chromium instalado
+**Status:** validado end-to-end com dados reais no DB (2026-05-28)
+**Pré-requisitos:** `.venv` ativado, Anthropic key em `.env`
 
-## Contexto
+## Estratégia final (depois de 3 tentativas)
 
-As waves 1 e 2 já estão commitadas (`fc2c03d` STJ, `8730181` TJ-SP). 421/421
-testes passam com mocks de Playwright e `httpx.Client`. Este runbook valida
-contra o portal real do STJ (rede + Anthropic), antes do backfill de 5 anos.
+| Tentativa | Resultado |
+|---|---|
+| httpx + regex na listagem antiga | ❌ portal renderiza via JS |
+| Playwright + select dinâmico | ❌ selects decorativos, conteúdo não muda |
+| **PDF anual agregado via httpx** | ✅ **funciona** |
+
+URL: `https://processo.stj.jus.br/docs_internet/informativos/anuais/informativo_anual_{ANO}.pdf`
+
+- Cada PDF agrega ~38 informativos do ano (1000-1245 páginas, 17-38MB)
+- Anos disponíveis: **2017 até 2023** (confirmado). 2024/2025 dão 404 —
+  STJ demora ~1 ano pra consolidar.
+- `obter_pdfs_anuais` valida cada ano via HEAD dinamicamente.
+
+## Pré-filtro por keyword (economia de tokens)
+
+Smoke real revelou densidade baixa: em 30 blocos do PDF 2023, só 1 era das
+áreas-alvo (3%). Sem filtro, 1 ano = ~$40 pra ~16 julgados úteis.
+
+`parser.bloco_e_candidato()` corta ~85% dos blocos (penal, família,
+processual) ANTES do Anthropic, checando keyword das áreas-alvo
+(usucapião, ITBI, alienação fiduciária, herança, inventário, REURB...).
+Resultado: ~$6-8 por ano em vez de $40.
 
 ## Passo 0 — sanidade (offline, ~5s)
 
 ```powershell
 cd C:\Users\mario\Documents\Noviello-Produtividade\automacao
-.venv\Scripts\python.exe -m pytest tests/julgado_radar/ -q
+.venv\Scripts\python.exe -m pytest tests/julgado_radar/ -q --basetemp=C:/Users/mario/AppData/Local/Temp/pytest-fresh
 ```
 
-Esperado: `132 passed`. Se falhar, parar e reportar.
+Esperado: `169 passed`. (O `--basetemp` evita o erro de lock do temp default.)
 
-## Passo 1 — Playwright Chromium instalado?
+## Passo 1 — smoke sem Anthropic (~30s, $0)
 
 ```powershell
-.venv\Scripts\python.exe -m playwright install chromium
+.venv\Scripts\python.exe -m samples._smoke_pdf_anual_2023
 ```
 
-Se já instalado, é no-op em ~3s. Se não, baixa ~150MB (~30s).
+Valida: download do PDF anual 2023 (27MB), pypdf extrai ~1.5M chars,
+particiona em ~550 blocos. Critérios passa/falha no fim.
 
-## Passo 2 — smoke do descobrir_informativos (sem Anthropic, ~30s)
-
-Cria `automacao/samples/_smoke_stj_descobrir.py`:
-
-```python
-"""Smoke: descobre informativos 2024 via portal real."""
-from src.julgado_radar.feeds_stj import descobrir_informativos
-
-refs = descobrir_informativos([2024])
-print(f"Total descobertos para 2024: {len(refs)}")
-for r in refs[:5]:
-    print(f"  - inf-{r.numero:04d}: {r.titulo[:60]}")
-```
+## Passo 2 — smoke com Anthropic (30 blocos, ~$2.40, ~5min)
 
 ```powershell
-.venv\Scripts\python.exe -m automacao.samples._smoke_stj_descobrir
+.venv\Scripts\python.exe -m samples._smoke_anthropic_pdf_anual
 ```
 
-**Critérios de aceitação:**
-- ≥30 informativos descobertos para 2024 (esperado: 38)
-- Cada ref tem `select_id`, `option_value`, `titulo` preenchidos
-- Nenhuma exceção; Chromium fecha limpo
+Extrai 30 blocos via Opus 4.7, mostra distribuição por área + 3 exemplos
++ custo. Já rodado: 1/30 imobiliário, qualidade alta.
 
-## Passo 3 — smoke do baixar_informativo (sem Anthropic, ~10s/inf)
-
-Cria `automacao/samples/_smoke_stj_baixar.py`:
-
-```python
-"""Smoke: baixa 1 informativo via portal real."""
-from pathlib import Path
-from src.julgado_radar.feeds_stj import descobrir_informativos, baixar_informativo
-
-refs = descobrir_informativos([2024])
-ref = refs[0]  # mais recente
-print(f"Baixando inf-{ref.numero:04d} ({ref.titulo[:50]})")
-
-cache = Path("state/julgado_radar_cache/stj")
-arq = baixar_informativo(ref, cache)
-html = arq.read_text(encoding="utf-8")
-print(f"  HTML salvo em {arq} ({len(html)} chars)")
-print(f"  Primeiras 300 chars: {html[:300]}")
-```
-
-**Critérios de aceitação:**
-- Arquivo `state/julgado_radar_cache/stj/inf-NNNN.html` criado (>1KB)
-- HTML contém referências a "PROCESSO", "REsp", "AgInt" ou similares
-- Segundo run usa cache (≤1s, sem abrir Chromium)
-
-## Passo 4 — backfill real 1 ano (com Anthropic, ~$2-4)
+## Passo 3 — backfill real (CUIDADO com a janela)
 
 ```powershell
-.venv\Scripts\python.exe -m src.julgado_radar.backfill --janela 1 --fontes stj
+# 1 ano só (2023, mais recente disponível com --janela 4 a partir de 2026):
+.venv\Scripts\python.exe -m src.julgado_radar.backfill --janela 4 --fontes stj
+
+# Histórico completo 2017-2023 (7 anos, ~$40-55, ~1h):
+.venv\Scripts\python.exe -m src.julgado_radar.backfill --janela 10 --fontes stj
 ```
 
-**Critérios de aceitação:**
-- ≥30 informativos baixados (38 esperados para 2024)
-- ≥30 julgados em `state/julgado_radar.db` table `julgados`
-- Mix de áreas: urbanístico + imobiliário + sucessório (variável; pelo
-  menos 3 de cada se a janela cobriu 12 meses)
-- Custo Anthropic Console: $2-4 (10-20K tokens input × ~6K saída × 38 chamadas)
-- Sem stack traces; erros tolerados em até 3 informativos (parsing
-  edge cases)
+**ATENÇÃO:** `--janela N` pega N anos a partir do ano atual. Como existem
+PDFs desde 2017, uma janela grande processa MUITOS anos. Cada ano ~$6-8 e
+~10min. Comece com `--janela 4` (só 2023) pra calibrar custo.
 
-## Passo 5 — query de exemplo (verifica que entrou)
+Idempotente: anos já processados (fetch_log=ok) são pulados. Interromper
+com Ctrl+C preserva os anos completos; o ano em andamento reprocessa depois.
+Ordem: mais recente primeiro (2023 → 2022 → ...).
+
+## Passo 4 — conferir no DB
 
 ```powershell
-.venv\Scripts\python.exe -c "
-from src.julgado_radar import searcher, db
-from src.config import load_config
-cfg = load_config()
-conn = db.abrir(cfg.state_dir)
-print('Total julgados:', searcher.contar_total(conn))
-print('Por area:', searcher.contar_por_area(conn))
-print()
-print('3 julgados urbanisticos recentes:')
-for j in searcher.buscar(conn, '', area='urbanistico', limit=3):
-    print(f'  - {j[\"processo_id\"]}: {j[\"tese\"][:80]}')
-"
+.venv\Scripts\python.exe -c "from src.julgado_radar import searcher, indexer, db; from src.config import load_config; cfg = load_config(); conn = db.abrir(cfg.state_dir); print('Total:', searcher.contar(conn)); print('Por tribunal/area:', dict(indexer.contar_por_tribunal_area(conn)))"
 ```
 
-## Se algo falhar
+Ou abrir o painel e ir em `/radar`:
 
-1. **Portal STJ mudou layout** (select ID diferente): atualizar
-   `URL_PORTAL_INFORMATIVOS` ou `ANOS_SUPORTADOS` em `feeds_stj.py`.
-2. **Chromium não inicia** (headless flag rejeitada): rodar
-   `playwright install chromium` de novo.
-3. **HTML vazio depois do select**: aumentar `wait_for_timeout(3000)` para
-   `5000` em `baixar_informativo` (AJAX lento).
-4. **Anthropic rate-limit**: rodar com `--janela 1` (≤40 chamadas) ao
-   invés de `--janela 5` (~200 chamadas).
+```powershell
+.venv\Scripts\python.exe -m src.painel
+```
 
-## TJ-SP (não rodar ainda neste smoke)
+## Estado em 2026-05-28
 
-A wave 2 só faz GET prévio + POST com CSRF — não foi probada contra portal
-real. Recomendo deixar pra um smoke separado depois que o STJ estiver
-estável. Comando previsto: `python -m src.julgado_radar.backfill --janela 1
---fontes tjsp --areas imobiliario` (~50 min, sem custo Anthropic — TJ-SP
-não usa IA).
+- Pipeline validado end-to-end: 20 julgados no DB cobrindo as 3 áreas em
+  STJ + TJ-SP. Backfill 2017 interrompido manualmente (custo).
+- Próximo passo do Mario: decidir quantos anos de histórico indexar.
+
+## Anos correntes (2024-2025): pendente
+
+O PDF anual de 2024+ ainda não existe. Pra jurisprudência recente, opções
+futuras (não implementadas):
+- Aguardar STJ publicar o anual 2024 (~meados de 2025... ou seja, já devia
+  existir; revalidar a URL periodicamente)
+- Implementar coleta do informativo "mais recente" que o portal carrega
+  como default (Playwright pega o último sem precisar selecionar)
+
+## TJ-SP
+
+Wave 2 (session-aware httpx + CSRF) implementada e testada com mocks, mas
+não probada contra portal real. Smoke separado pendente — comando previsto:
+`python -m src.julgado_radar.backfill --janela 1 --fontes tjsp --areas imobiliario`
+(sem custo Anthropic — TJ-SP não usa IA, só regex na ementa).

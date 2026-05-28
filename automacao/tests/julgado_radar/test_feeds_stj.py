@@ -314,10 +314,14 @@ def test_anos_suportados_inclui_2021_a_2026():
     # quando STJ publicar 2027, atualizar essa constante
 
 
-def test_anos_pdf_anual_e_subconjunto_de_suportados():
-    """Anos com PDF anual disponivel devem todos estar em ANOS_SUPORTADOS."""
-    for ano in ANOS_PDF_ANUAL:
-        assert ano in ANOS_SUPORTADOS
+def test_anos_pdf_anual_cobre_historico():
+    """PDF anual existe desde 2017 (mais amplo que o combo Playwright 2021+).
+    Sao conceitos independentes: ANOS_SUPORTADOS = combo dinamico do portal;
+    ANOS_PDF_ANUAL = PDFs agregados disponiveis via httpx."""
+    assert 2017 in ANOS_PDF_ANUAL
+    assert 2023 in ANOS_PDF_ANUAL
+    # 2024+ nao disponivel ainda (STJ demora ~1 ano)
+    assert 2024 not in ANOS_PDF_ANUAL
 
 
 # ===== PdfAnualRef =====

@@ -43,9 +43,12 @@ URL_PDF_ANUAL_TEMPLATE = (
 # 2026 e o teto atual (recalibrar quando STJ publicar 2027).
 ANOS_SUPORTADOS = (2021, 2022, 2023, 2024, 2025, 2026)
 
-# Anos com PDF anual confirmado disponivel (probe 2026-05-27).
-# 2024/2025 dao 404 — STJ demora ~1 ano pra consolidar o anual.
-ANOS_PDF_ANUAL = (2021, 2022, 2023)
+# Anos com PDF anual confirmado disponivel. Backfill real (2026-05-27)
+# provou que existem desde pelo menos 2017 (provavelmente 2000+). 2024/2025
+# dao 404 — STJ demora ~1 ano pra consolidar o anual do ano anterior.
+# NOTA: obter_pdfs_anuais valida cada ano dinamicamente via HEAD, entao
+# esta constante e so referencia/documentacao — nao limita a busca.
+ANOS_PDF_ANUAL = (2017, 2018, 2019, 2020, 2021, 2022, 2023)
 
 
 @dataclass(frozen=True)
@@ -148,7 +151,9 @@ def obter_pdfs_anuais(
     """
     head = http_head or _http_head_default
     refs: list[PdfAnualRef] = []
-    for ano in sorted(set(int(a) for a in anos)):
+    # Mais recente primeiro: se o backfill for interrompido, prioriza os anos
+    # mais relevantes (jurisprudencia recente) em vez dos antigos.
+    for ano in sorted(set(int(a) for a in anos), reverse=True):
         url = URL_PDF_ANUAL_TEMPLATE.format(ano=ano)
         try:
             status, _ = head(url)
