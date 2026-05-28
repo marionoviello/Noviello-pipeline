@@ -87,26 +87,35 @@ def _processar_stj(
     anthropic_cli,
     stats: Stats,
     *,
-    playwright_factory=None,
+    http_get: Optional["feeds_stj.HttpGetFn"] = None,
+    http_head: Optional["feeds_stj.HttpHeadFn"] = None,
+    playwright_factory=None,  # kept for legacy callers; unused na estrategia atual
     sleep_fn: Callable[[float], None] = time.sleep,
 ) -> None:
-    """Itera informativos da janela, baixa via Playwright, parseia e indexa."""
+    """Itera ANOS da janela, baixa o PDF anual de cada um, parseia e indexa.
+
+    Estrategia atual (2026-05-27 final): PDF anual agregado via httpx puro.
+    Anos sem PDF anual disponivel (2024+) sao silenciosamente filtrados
+    em obter_pdfs_anuais.
+    """
     try:
-        refs = feeds_stj.descobrir_informativos(
-            anos, playwright_factory=playwright_factory,
-        )
+        refs = feeds_stj.obter_pdfs_anuais(anos, http_head=http_head)
     except Exception as exc:  # noqa: BLE001
         logger.error("falha descoberta STJ: %s", exc)
         stats.stj_erros += 1
+        return
+
+    if not refs:
+        logger.info("STJ: nenhum PDF anual disponivel para os anos %s", anos)
         return
 
     for ref in refs:
         if indexer.fetch_ja_feito(conn, ref.fonte_key):
             continue
         try:
-            html_path = feeds_stj.baixar_informativo(
+            pdf_path = feeds_stj.baixar_pdf_anual(
                 ref, cache_dir,
-                playwright_factory=playwright_factory, sleep_fn=sleep_fn,
+                http_get=http_get, sleep_fn=sleep_fn,
             )
         except feeds_stj.FeedSTJError as exc:
             indexer.registrar_fetch(conn, ref.fonte_key, "erro", erro=str(exc))
@@ -114,7 +123,7 @@ def _processar_stj(
             continue
 
         try:
-            resultado = parser.extrair_itens_de_informativo(html_path, anthropic_cli)
+            resultado = parser.extrair_itens_de_informativo(pdf_path, anthropic_cli)
         except Exception as exc:  # noqa: BLE001
             indexer.registrar_fetch(conn, ref.fonte_key, "erro", erro=str(exc))
             stats.stj_erros += 1
@@ -134,8 +143,8 @@ def _processar_stj(
                 ementa=item.get("ementa", ""),
                 citacao_voto=item.get("citacao_voto", ""),
                 fundamentos=item.get("fundamentos", []),
-                url_fonte=ref.url_pdf,
-                pdf_local=str(html_path),
+                url_fonte=ref.url,
+                pdf_local=str(pdf_path),
                 info_origem=ref.fonte_key,
                 indexado_em=agora_iso(),
             ))
@@ -155,7 +164,7 @@ def _processar_stj(
 
         indexer.registrar_fetch(conn, ref.fonte_key, "ok", itens_inseridos=s["inseridos"])
         logger.info(
-            "STJ inf-%s: %d aceitos, %d descartados", ref.numero,
+            "STJ pdf-anual-%d: %d aceitos, %d descartados", ref.ano,
             len(julgados), len(resultado["descartados"]),
         )
 
@@ -268,7 +277,9 @@ def executar_backfill(
     fontes: Iterable[str] = ("stj", "tjsp"),
     areas: Optional[Iterable[str]] = None,
     anthropic_cli=None,
-    playwright_factory=None,
+    http_get: Optional["feeds_stj.HttpGetFn"] = None,
+    http_head: Optional["feeds_stj.HttpHeadFn"] = None,
+    playwright_factory=None,  # legacy
     session_factory: Optional["feeds_tjsp.SessionFactory"] = None,
     http_post: Optional["feeds_tjsp.HttpPostFn"] = None,
     sleep_fn: Callable[[float], None] = time.sleep,
@@ -290,7 +301,9 @@ def executar_backfill(
             else:
                 _processar_stj(
                     conn, anos, cache_dir, anthropic_cli, stats,
-                    playwright_factory=playwright_factory, sleep_fn=sleep_fn,
+                    http_get=http_get, http_head=http_head,
+                    playwright_factory=playwright_factory,
+                    sleep_fn=sleep_fn,
                 )
 
         if "tjsp" in fontes:

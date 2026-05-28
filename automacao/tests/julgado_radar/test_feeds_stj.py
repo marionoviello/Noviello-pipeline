@@ -9,12 +9,17 @@ from contextlib import contextmanager
 import pytest
 
 from src.julgado_radar.feeds_stj import (
+    ANOS_PDF_ANUAL,
     ANOS_SUPORTADOS,
     FeedSTJError,
     InformativoRef,
+    PdfAnualRef,
+    URL_PDF_ANUAL_TEMPLATE,
     URL_PORTAL_INFORMATIVOS,
     baixar_informativo,
+    baixar_pdf_anual,
     descobrir_informativos,
+    obter_pdfs_anuais,
 )
 
 
@@ -307,3 +312,176 @@ def test_anos_suportados_inclui_2021_a_2026():
     assert 2021 in ANOS_SUPORTADOS
     assert 2026 in ANOS_SUPORTADOS
     # quando STJ publicar 2027, atualizar essa constante
+
+
+def test_anos_pdf_anual_e_subconjunto_de_suportados():
+    """Anos com PDF anual disponivel devem todos estar em ANOS_SUPORTADOS."""
+    for ano in ANOS_PDF_ANUAL:
+        assert ano in ANOS_SUPORTADOS
+
+
+# ===== PdfAnualRef =====
+
+def test_pdf_anual_ref_fonte_key():
+    ref = PdfAnualRef(ano=2023, url="x")
+    assert ref.fonte_key == "stj-pdf-anual-2023"
+
+
+def test_pdf_anual_ref_filename():
+    ref = PdfAnualRef(ano=2023, url="x")
+    assert ref.filename == "informativo_anual_2023.pdf"
+
+
+# ===== obter_pdfs_anuais =====
+
+def test_obter_pdfs_anuais_so_devolve_anos_com_200():
+    """Anos cujo HEAD da 404 sao filtrados."""
+    def fake_head(url):
+        if "2023" in url or "2022" in url:
+            return 200, {}
+        return 404, {}
+
+    refs = obter_pdfs_anuais([2021, 2022, 2023, 2024], http_head=fake_head)
+    anos = sorted(r.ano for r in refs)
+    assert anos == [2022, 2023]
+
+
+def test_obter_pdfs_anuais_url_canonica():
+    def fake_head(url):
+        return 200, {}
+
+    refs = obter_pdfs_anuais([2023], http_head=fake_head)
+    assert len(refs) == 1
+    esperado = URL_PDF_ANUAL_TEMPLATE.format(ano=2023)
+    assert refs[0].url == esperado
+
+
+def test_obter_pdfs_anuais_excecao_no_head_filtra_ano():
+    def fake_head(url):
+        raise RuntimeError("DNS error")
+
+    refs = obter_pdfs_anuais([2023], http_head=fake_head)
+    assert refs == []
+
+
+def test_obter_pdfs_anuais_deduplica_anos_repetidos():
+    chamadas = []
+
+    def fake_head(url):
+        chamadas.append(url)
+        return 200, {}
+
+    obter_pdfs_anuais([2023, 2023, 2023], http_head=fake_head)
+    assert len(chamadas) == 1  # uma chamada por ano unico
+
+
+# ===== baixar_pdf_anual =====
+
+PDF_FAKE = b"%PDF-1.4\n" + b"x" * 200_000  # >100KB, comeca com %PDF
+
+
+def test_baixar_pdf_anual_grava_no_cache(tmp_path):
+    ref = PdfAnualRef(ano=2023, url="https://x/2023.pdf")
+    sleeps = []
+
+    def fake_get(url):
+        return 200, PDF_FAKE
+
+    destino = baixar_pdf_anual(
+        ref, tmp_path / "cache",
+        http_get=fake_get, sleep_fn=sleeps.append,
+    )
+    assert destino.exists()
+    assert destino.name == "informativo_anual_2023.pdf"
+    assert destino.read_bytes().startswith(b"%PDF")
+    assert sleeps == [1.0]  # rate_limit default
+
+
+def test_baixar_pdf_anual_cache_hit(tmp_path):
+    """Se ja existe no cache, nao chama HTTP nem dorme."""
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    ref = PdfAnualRef(ano=2023, url="x")
+    pre = cache_dir / ref.filename
+    pre.write_bytes(b"cache antigo PDF" * 1000)
+
+    chamadas = []
+
+    def fake_get(url):
+        chamadas.append(url)
+        return 200, b""
+
+    destino = baixar_pdf_anual(
+        ref, cache_dir, http_get=fake_get, sleep_fn=lambda s: None,
+    )
+    assert destino == pre
+    assert chamadas == []
+
+
+def test_baixar_pdf_anual_falha_404(tmp_path):
+    ref = PdfAnualRef(ano=2024, url="x")
+
+    def fake_get(url):
+        return 404, b""
+
+    with pytest.raises(FeedSTJError, match="indisponivel"):
+        baixar_pdf_anual(
+            ref, tmp_path / "cache",
+            http_get=fake_get, sleep_fn=lambda s: None,
+        )
+
+
+def test_baixar_pdf_anual_falha_tamanho_minimo(tmp_path):
+    """Body <100KB e rejeitado (PDFs anuais STJ sao 17-38MB)."""
+    ref = PdfAnualRef(ano=2023, url="x")
+
+    def fake_get(url):
+        return 200, b"%PDF-tiny"
+
+    with pytest.raises(FeedSTJError, match="indisponivel"):
+        baixar_pdf_anual(
+            ref, tmp_path / "cache",
+            http_get=fake_get, sleep_fn=lambda s: None,
+        )
+
+
+def test_baixar_pdf_anual_corrompido_nao_pdf(tmp_path):
+    """Body grande mas nao comeca com %PDF e rejeitado."""
+    ref = PdfAnualRef(ano=2023, url="x")
+    body = b"<html>404 not pretty</html>" + b"x" * 200_000
+
+    def fake_get(url):
+        return 200, body
+
+    with pytest.raises(FeedSTJError, match="corrompido"):
+        baixar_pdf_anual(
+            ref, tmp_path / "cache",
+            http_get=fake_get, sleep_fn=lambda s: None,
+        )
+
+
+def test_baixar_pdf_anual_excecao_de_rede_vira_feed_error(tmp_path):
+    ref = PdfAnualRef(ano=2023, url="x")
+
+    def fake_get(url):
+        raise ConnectionError("timeout")
+
+    with pytest.raises(FeedSTJError, match="falha de rede"):
+        baixar_pdf_anual(
+            ref, tmp_path / "cache",
+            http_get=fake_get, sleep_fn=lambda s: None,
+        )
+
+
+def test_baixar_pdf_anual_rate_limit_customizado(tmp_path):
+    ref = PdfAnualRef(ano=2023, url="x")
+    sleeps = []
+
+    def fake_get(url):
+        return 200, PDF_FAKE
+
+    baixar_pdf_anual(
+        ref, tmp_path / "cache",
+        http_get=fake_get, sleep_fn=sleeps.append, rate_limit_seg=2.5,
+    )
+    assert sleeps == [2.5]

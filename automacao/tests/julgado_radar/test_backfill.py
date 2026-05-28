@@ -125,20 +125,24 @@ def test_executar_backfill_sem_anthropic_pula_stj(tmp_path):
 
 
 def test_executar_backfill_stj_completo_com_mocks(tmp_path, monkeypatch):
-    """Fluxo end-to-end com Playwright mock: 1 informativo, 1 item aceito."""
+    """Fluxo end-to-end com http_get/http_head mocks: 1 PDF anual, 1 item aceito."""
     cfg = _cfg(tmp_path)
 
-    # ano atual sera detectado por executar_backfill — usamos um ano dentro
-    # de ANOS_SUPORTADOS (2026) e povoamos o combo correspondente.
-    ano = _dt.date.today().year
-    if ano not in (2021, 2022, 2023, 2024, 2025, 2026):
-        ano = 2026
-    page = _FakePage(
-        selects={f"idInformativoEdicoesCombo{ano}": [
-            {"value": "0855", "text": "Informativo 855"},
-        ]},
-        blocos={"0855": "<ul><li>PROCESSO REsp 999/SP. Texto longo o suficiente "
-                        "pra passar do limiar de 200 chars. " + ("x " * 80) + "</li></ul>"},
+    # PDF "anual" fake — precisa comecar com %PDF e ser >100KB
+    pdf_fake = b"%PDF-1.4\n" + b"x" * 200_000
+
+    def fake_head(url):
+        # so 2023 tem PDF anual disponivel no mock
+        if "informativo_anual_2023.pdf" in url:
+            return 200, {"content-type": "application/pdf"}
+        return 404, {}
+
+    def fake_get(url):
+        return 200, pdf_fake
+
+    monkeypatch.setattr(
+        "src.julgado_radar.parser._ler_pdf",
+        lambda p: "PROCESSO\n" + ("Item A texto longo aqui. " * 50),
     )
 
     cli = MagicMock()
@@ -148,10 +152,11 @@ def test_executar_backfill_stj_completo_com_mocks(tmp_path, monkeypatch):
         "relator": "Min. X", "fundamentos": [],
     }
 
+    # janela=10 garante que 2023 esteja em qualquer data atual ate 2032
     stats = backfill.executar_backfill(
-        cfg, janela=1, fontes=("stj",),
+        cfg, janela=10, fontes=("stj",),
         anthropic_cli=cli,
-        playwright_factory=_pw_factory(page),
+        http_get=fake_get, http_head=fake_head,
         sleep_fn=lambda s: None,
     )
     assert stats.stj_inseridos == 1
@@ -161,15 +166,19 @@ def test_executar_backfill_stj_completo_com_mocks(tmp_path, monkeypatch):
 def test_executar_backfill_stj_idempotente(tmp_path, monkeypatch):
     """Rodar 2x = 0 novos na segunda (fetch_log pula)."""
     cfg = _cfg(tmp_path)
-    ano = _dt.date.today().year
-    if ano not in (2021, 2022, 2023, 2024, 2025, 2026):
-        ano = 2026
+    pdf_fake = b"%PDF-1.4\n" + b"x" * 200_000
 
-    page = _FakePage(
-        selects={f"idInformativoEdicoesCombo{ano}": [
-            {"value": "0855", "text": "Informativo 855"},
-        ]},
-        blocos={"0855": "<li>PROCESSO " + ("X " * 200) + "</li>"},
+    def fake_head(url):
+        if "2023.pdf" in url:
+            return 200, {}
+        return 404, {}
+
+    def fake_get(url):
+        return 200, pdf_fake
+
+    monkeypatch.setattr(
+        "src.julgado_radar.parser._ler_pdf",
+        lambda p: "PROCESSO\n" + ("X " * 200),
     )
 
     cli = MagicMock()
@@ -179,12 +188,12 @@ def test_executar_backfill_stj_idempotente(tmp_path, monkeypatch):
     }
 
     backfill.executar_backfill(
-        cfg, janela=1, fontes=("stj",), anthropic_cli=cli,
-        playwright_factory=_pw_factory(page), sleep_fn=lambda s: None,
+        cfg, janela=10, fontes=("stj",), anthropic_cli=cli,
+        http_get=fake_get, http_head=fake_head, sleep_fn=lambda s: None,
     )
     stats2 = backfill.executar_backfill(
-        cfg, janela=1, fontes=("stj",), anthropic_cli=cli,
-        playwright_factory=_pw_factory(page), sleep_fn=lambda s: None,
+        cfg, janela=10, fontes=("stj",), anthropic_cli=cli,
+        http_get=fake_get, http_head=fake_head, sleep_fn=lambda s: None,
     )
     assert stats2.stj_inseridos == 0  # idempotente
 

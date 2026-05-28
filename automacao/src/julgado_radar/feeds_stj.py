@@ -1,22 +1,22 @@
-"""STJ Informativos — discover + download via Playwright + select dinamico.
+"""STJ Informativos — duas estrategias de coleta.
 
-**Reescrito 2026-05-27**: a estrategia httpx + regex contra a listagem antiga
-falhava porque o portal renderiza tudo via JavaScript (HTML estatico tem ~1KB,
-zero referencias a informativos). Diagnostico completo em
-`docs/superpowers/specs/2026-05-27-radar-stj-calibracao.md`.
+**Estrategia atual (2026-05-27 final, validada):** baixar **PDFs anuais
+agregados** via httpx puro. Cada PDF contem todos os ~38 informativos de
+um ano consolidados (ex: informativo_anual_2023.pdf = 1000 paginas, 26MB).
 
-Estrategia nova (validada via probe em automacao/samples/_probe_stj_select.py):
+URL pattern:
+  https://processo.stj.jus.br/docs_internet/informativos/anuais/informativo_anual_{ANO}.pdf
 
-1. Abre processo.stj.jus.br/jurisprudencia/externo/informativo/ via Chromium
-2. Aguarda networkidle (combos sao injetados via JS)
-3. Para cada ano, le `#idInformativoEdicoesCombo{ANO}` enumerando as edicoes
-4. Para baixar, faz `page.select_option(...)` e captura o HTML do bloco
-   `#idInformativoBlocoLista` (renderizado via AJAX apos selecao)
-5. HTML salvo em cache (lugar do antigo PDF). Parser ja sabe trabalhar com
-   tanto texto quanto HTML (extracao via Anthropic structured output).
+Anos com PDF anual disponivel: 2021, 2022, 2023 (confirmados via probe).
+2024 ainda nao foi publicado (STJ demora ~1 ano pra consolidar). Pra anos
+correntes, ver `baixar_informativo` (Playwright — limitado).
 
-Tests injetam um `playwright_factory` falso (context manager retornando uma
-`FakePage` minima) para evitar abrir Chromium real.
+**Estrategia legacy (Playwright):** `descobrir_informativos` + `baixar_informativo`
+continuam presentes, mas `baixar_informativo` foi documentado como BROKEN
+contra o portal real (selects sao decorativos, conteudo do informativo nao
+muda apos select). Mantido pra back-compat e pra futura calibracao.
+
+Diagnostico completo em probes v3-v5 (automacao/samples/_probe_stj_v*.py).
 """
 
 from __future__ import annotations
@@ -34,9 +34,18 @@ URL_PORTAL_INFORMATIVOS = (
     "https://processo.stj.jus.br/jurisprudencia/externo/informativo/"
 )
 
+URL_PDF_ANUAL_TEMPLATE = (
+    "https://processo.stj.jus.br/docs_internet/informativos/anuais/"
+    "informativo_anual_{ano}.pdf"
+)
+
 # Anos suportados pelo portal (cada um tem seu proprio combo `idInformativoEdicoesCombo{ano}`).
 # 2026 e o teto atual (recalibrar quando STJ publicar 2027).
 ANOS_SUPORTADOS = (2021, 2022, 2023, 2024, 2025, 2026)
+
+# Anos com PDF anual confirmado disponivel (probe 2026-05-27).
+# 2024/2025 dao 404 — STJ demora ~1 ano pra consolidar o anual.
+ANOS_PDF_ANUAL = (2021, 2022, 2023)
 
 
 @dataclass(frozen=True)
@@ -65,6 +74,138 @@ class InformativoRef:
         """Nome do arquivo em cache. HTML no novo fluxo, .pdf no legacy."""
         return f"inf-{self.numero:04d}.html"
 
+
+# ===== Estrategia atual: PDF anual agregado via httpx =====
+
+@dataclass(frozen=True)
+class PdfAnualRef:
+    """Referencia a um PDF anual agregado do STJ (1 PDF = todos os infos do ano).
+
+    Ex: PdfAnualRef(ano=2023, url='.../informativo_anual_2023.pdf')
+    """
+
+    ano: int
+    url: str
+
+    @property
+    def fonte_key(self) -> str:
+        """Chave de idempotencia para fetch_log."""
+        return f"stj-pdf-anual-{self.ano}"
+
+    @property
+    def filename(self) -> str:
+        return f"informativo_anual_{self.ano}.pdf"
+
+
+# Default HTTP getter (httpx) — pode ser substituido em testes.
+HttpGetFn = Callable[[str], tuple[int, bytes]]
+
+
+def _http_get_default(url: str) -> tuple[int, bytes]:  # pragma: no cover — real net
+    """Fallback real para baixar PDFs anuais. Importa httpx lazy."""
+    import httpx  # noqa: PLC0415
+
+    resp = httpx.get(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                          "AppleWebKit/537.36 Chrome/120.0 Safari/537.36",
+        },
+        timeout=120.0,  # PDFs anuais sao 17-38MB
+        follow_redirects=True,
+    )
+    return resp.status_code, resp.content
+
+
+def _http_head_default(url: str) -> tuple[int, dict]:  # pragma: no cover — real net
+    """HEAD request — checa existencia sem baixar."""
+    import httpx  # noqa: PLC0415
+
+    resp = httpx.head(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                          "AppleWebKit/537.36 Chrome/120.0 Safari/537.36",
+        },
+        timeout=15.0,
+        follow_redirects=True,
+    )
+    return resp.status_code, dict(resp.headers)
+
+
+HttpHeadFn = Callable[[str], tuple[int, dict]]
+
+
+def obter_pdfs_anuais(
+    anos: Iterable[int],
+    *,
+    http_head: Optional[HttpHeadFn] = None,
+) -> list[PdfAnualRef]:
+    """Para cada ano pedido, verifica se o PDF anual existe via HEAD e devolve refs.
+
+    Anos sem PDF disponivel (HEAD != 200) sao silenciosamente filtrados. Em
+    testes, injetar `http_head` que devolve dict de status por URL.
+    """
+    head = http_head or _http_head_default
+    refs: list[PdfAnualRef] = []
+    for ano in sorted(set(int(a) for a in anos)):
+        url = URL_PDF_ANUAL_TEMPLATE.format(ano=ano)
+        try:
+            status, _ = head(url)
+        except Exception:  # noqa: BLE001
+            continue
+        if status == 200:
+            refs.append(PdfAnualRef(ano=ano, url=url))
+    return refs
+
+
+def baixar_pdf_anual(
+    ref: PdfAnualRef,
+    cache_dir: Path,
+    *,
+    http_get: Optional[HttpGetFn] = None,
+    rate_limit_seg: float = RATE_LIMIT_STJ_SEG,
+    sleep_fn: Callable[[float], None] = time.sleep,
+) -> Path:
+    """Baixa o PDF anual via httpx e grava no cache.
+
+    Se ja existe em `cache_dir/informativo_anual_{ano}.pdf` (e nao-vazio),
+    devolve direto (cache hit). Levanta FeedSTJError em falha.
+    """
+    cache_dir = Path(cache_dir)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    destino = cache_dir / ref.filename
+
+    if destino.exists() and destino.stat().st_size > 0:
+        return destino
+
+    getter = http_get or _http_get_default
+    try:
+        status, body = getter(ref.url)
+    except Exception as exc:  # noqa: BLE001
+        raise FeedSTJError(
+            f"falha de rede baixando PDF anual {ref.ano}: {exc}"
+        ) from exc
+
+    if status != 200 or len(body) < 100_000:  # PDFs anuais nunca <100KB
+        raise FeedSTJError(
+            f"PDF anual {ref.ano} indisponivel (status={status}, "
+            f"bytes={len(body)})"
+        )
+
+    if not body.startswith(b"%PDF"):
+        raise FeedSTJError(
+            f"PDF anual {ref.ano} corrompido (nao comeca com %PDF)"
+        )
+
+    if rate_limit_seg > 0:
+        sleep_fn(rate_limit_seg)
+
+    destino.write_bytes(body)
+    return destino
+
+
+# ===== Estrategia legacy: Playwright (mantida pra compat / futura calibracao) =====
 
 # Interface minima esperada da pagina Playwright (subset de
 # playwright.sync_api.Page usado aqui). Permite mock simples nos testes.
