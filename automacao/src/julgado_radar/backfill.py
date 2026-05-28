@@ -180,10 +180,15 @@ def _processar_tjsp(
     anthropic_cli,
     stats: Stats,
     *,
-    http_post: Optional[feeds_tjsp.HttpPostFn] = None,
+    session_factory: Optional["feeds_tjsp.SessionFactory"] = None,
+    http_post: Optional["feeds_tjsp.HttpPostFn"] = None,
     sleep_fn: Callable[[float], None] = time.sleep,
 ) -> None:
-    """Itera (area, ano, mes) buscando acordaos via cjsg."""
+    """Itera (area, ano, mes) buscando acordaos via cjsg.
+
+    Aceita session_factory (preferido, mantem sessao httpx.Client com
+    cookies) ou http_post legacy (compat com testes antigos).
+    """
     for ano, mes in _meses_da_janela(anos):
         for area in areas:
             fonte_key = feeds_tjsp.fonte_key(area, ano, mes)
@@ -193,7 +198,9 @@ def _processar_tjsp(
             try:
                 acordaos = feeds_tjsp.buscar_acordaos(
                     area, inicio, fim,
-                    http_post=http_post, sleep_fn=sleep_fn,
+                    session_factory=session_factory,
+                    http_post=http_post,
+                    sleep_fn=sleep_fn,
                 )
             except Exception as exc:  # noqa: BLE001
                 indexer.registrar_fetch(conn, fonte_key, "erro", erro=str(exc))
@@ -262,6 +269,7 @@ def executar_backfill(
     areas: Optional[Iterable[str]] = None,
     anthropic_cli=None,
     playwright_factory=None,
+    session_factory: Optional["feeds_tjsp.SessionFactory"] = None,
     http_post: Optional["feeds_tjsp.HttpPostFn"] = None,
     sleep_fn: Callable[[float], None] = time.sleep,
 ) -> Stats:
@@ -288,7 +296,9 @@ def executar_backfill(
         if "tjsp" in fontes:
             _processar_tjsp(
                 conn, anos, areas_lista, anthropic_cli, stats,
-                http_post=http_post, sleep_fn=sleep_fn,
+                session_factory=session_factory,
+                http_post=http_post,
+                sleep_fn=sleep_fn,
             )
 
         stats.por_area = indexer.contar_por_tribunal_area(conn)

@@ -1,5 +1,6 @@
-"""Testes do feeds_tjsp — POST CJSG + parser de HTML + busca por area."""
+"""Testes do feeds_tjsp — POST CJSG + parser de HTML + busca por area + sessao."""
 
+from contextlib import contextmanager
 from datetime import date
 
 import pytest
@@ -7,11 +8,51 @@ import pytest
 from src.julgado_radar.feeds_tjsp import (
     AcordaoTJSP,
     URL_CJSG,
+    URL_CJSG_CONSULTA,
     buscar_acordaos,
+    extrair_csrf,
     fonte_key,
     montar_payload_cjsg,
     parse_cjsg_html,
 )
+
+
+# ===== FakeSession — simula httpx.Client com cookies internos =====
+
+class FakeSession:
+    """Substituto de httpx.Client. Devolve respostas pre-configuradas e
+    loga calls pra asserts.
+
+    Configurar:
+      - `get_response`: (status, body_bytes) devolvido por sess.get(url)
+      - `post_response_fn`: callable (url, data) -> (status, body)
+    """
+
+    def __init__(
+        self,
+        *,
+        get_response: tuple[int, bytes] = (200, b""),
+        post_response_fn=None,
+    ):
+        self.get_response = get_response
+        self.post_response_fn = post_response_fn or (lambda u, d: (200, b""))
+        self.gets: list[str] = []
+        self.posts: list[tuple[str, dict]] = []
+
+    def get(self, url):
+        self.gets.append(url)
+        return self.get_response
+
+    def post(self, url, data):
+        self.posts.append((url, dict(data)))
+        return self.post_response_fn(url, data)
+
+
+def _factory(sess: FakeSession):
+    @contextmanager
+    def factory():
+        yield sess
+    return factory
 
 
 # ===== montar_payload =====
@@ -192,3 +233,138 @@ def test_buscar_acordaos_dedup_entre_termos():
 def test_fonte_key_formato_canonico():
     assert fonte_key("imobiliario", 2024, 8) == "tjsp-cjsg-2024-08-imobiliario"
     assert fonte_key("urbanistico", 2025, 12) == "tjsp-cjsg-2025-12-urbanistico"
+
+
+# ===== CSRF extraction =====
+
+def test_extrair_csrf_input_padrao():
+    html = '<form><input type="hidden" name="_csrf" value="abc123def" /></form>'
+    assert extrair_csrf(html) == "abc123def"
+
+
+def test_extrair_csrf_input_atributos_invertidos():
+    """value antes de name — regex aceita ambas as ordens."""
+    html = '<input value="xyz789" name="_csrf" type="hidden">'
+    assert extrair_csrf(html) == "xyz789"
+
+
+def test_extrair_csrf_meta_tag():
+    html = '<head><meta name="_csrf" content="meta-token-456"></head>'
+    assert extrair_csrf(html) == "meta-token-456"
+
+
+def test_extrair_csrf_html_sem_token():
+    assert extrair_csrf("<html><body>nada</body></html>") == ""
+
+
+def test_extrair_csrf_html_vazio():
+    assert extrair_csrf("") == ""
+    assert extrair_csrf(None) == ""  # tolera None
+
+
+def test_montar_payload_inclui_csrf_quando_dado():
+    p = montar_payload_cjsg(
+        "ITBI", date(2024, 1, 1), date(2024, 1, 31), csrf="tok-987",
+    )
+    assert p["_csrf"] == "tok-987"
+
+
+def test_montar_payload_omite_csrf_quando_vazio():
+    p = montar_payload_cjsg("ITBI", date(2024, 1, 1), date(2024, 1, 31))
+    assert "_csrf" not in p
+
+
+# ===== buscar_acordaos via session_factory =====
+
+_HTML_GET_PREVIO_COM_CSRF = (
+    '<html><body><form>'
+    '<input type="hidden" name="_csrf" value="TOKEN-AAA"/>'
+    '<input type="text" name="termo"/>'
+    '</form></body></html>'
+)
+
+
+def test_buscar_acordaos_faz_get_previo_antes_do_post():
+    sess = FakeSession(
+        get_response=(200, _HTML_GET_PREVIO_COM_CSRF.encode("utf-8")),
+        post_response_fn=lambda u, d: (200, HTML_CJSG_FAKE.encode("utf-8")),
+    )
+    buscar_acordaos(
+        "imobiliario", date(2024, 1, 1), date(2024, 1, 31),
+        session_factory=_factory(sess), sleep_fn=lambda s: None,
+    )
+    # GET previo foi em consultaCompleta.do (1 vez), depois POSTs
+    assert URL_CJSG_CONSULTA in sess.gets
+    assert sess.posts, "deveria ter feito POSTs"
+    # CSRF do GET previo aparece em cada POST
+    for _, payload in sess.posts:
+        assert payload.get("_csrf") == "TOKEN-AAA"
+
+
+def test_buscar_acordaos_sem_csrf_continua_sem_token():
+    """Se o GET previo nao tem CSRF, segue postando sem _csrf no payload."""
+    sess = FakeSession(
+        get_response=(200, b"<html><body>vazio</body></html>"),
+        post_response_fn=lambda u, d: (200, HTML_CJSG_FAKE.encode("utf-8")),
+    )
+    buscar_acordaos(
+        "imobiliario", date(2024, 1, 1), date(2024, 1, 31),
+        session_factory=_factory(sess), sleep_fn=lambda s: None,
+    )
+    for _, payload in sess.posts:
+        assert "_csrf" not in payload
+
+
+def test_buscar_acordaos_get_previo_500_segue_tentando_posts():
+    """GET previo nao-200 nao deve impedir os POSTs — alguns layouts CSRF
+    nao bloqueiam o POST e o GET so server pros cookies."""
+    sess = FakeSession(
+        get_response=(500, b""),
+        post_response_fn=lambda u, d: (200, HTML_CJSG_FAKE.encode("utf-8")),
+    )
+    resultado = buscar_acordaos(
+        "imobiliario", date(2024, 1, 1), date(2024, 1, 31),
+        session_factory=_factory(sess), sleep_fn=lambda s: None,
+    )
+    assert sess.posts  # ainda tentou
+    assert resultado  # ainda achou
+
+
+def test_buscar_acordaos_sessao_reusada_entre_termos():
+    """Uma unica sessao serve N POSTs (1 por termo). Garantido pelo
+    factory devolver o MESMO objeto em todas as chamadas internas."""
+    sess = FakeSession(
+        get_response=(200, _HTML_GET_PREVIO_COM_CSRF.encode("utf-8")),
+        post_response_fn=lambda u, d: (200, HTML_CJSG_FAKE.encode("utf-8")),
+    )
+    buscar_acordaos(
+        "imobiliario", date(2024, 1, 1), date(2024, 1, 31),
+        session_factory=_factory(sess), sleep_fn=lambda s: None,
+        top_n=100,  # forca ir ate o fim dos termos
+    )
+    # imobiliario tem 6 termos em config.TERMOS_BUSCA_TJSP — 1 GET + 6 POSTs no max
+    assert len(sess.gets) == 1
+    assert 1 <= len(sess.posts) <= 6
+
+
+def test_buscar_acordaos_post_excecao_termo_descartado():
+    """Se sess.post levanta, o termo e pulado mas os outros seguem."""
+    posts_feitos: list[int] = []
+
+    def post_fn(url, data):
+        posts_feitos.append(1)
+        if len(posts_feitos) == 1:
+            raise RuntimeError("conexao caiu")
+        return 200, HTML_CJSG_FAKE.encode("utf-8")
+
+    sess = FakeSession(
+        get_response=(200, _HTML_GET_PREVIO_COM_CSRF.encode("utf-8")),
+        post_response_fn=post_fn,
+    )
+    resultado = buscar_acordaos(
+        "imobiliario", date(2024, 1, 1), date(2024, 1, 31),
+        session_factory=_factory(sess), sleep_fn=lambda s: None,
+    )
+    # tentou >1 (excecao no primeiro, segue tentando os demais)
+    assert len(posts_feitos) >= 2
+    assert resultado
