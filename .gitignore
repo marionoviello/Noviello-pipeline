@@ -11,6 +11,8 @@ client_secret*.json
 service_account*.json
 .google_token
 .cloudflared/
+# binario do cloudflared (~52MB) — baixavel sob demanda em setup/install_tunnel.ps1
+automacao/setup/cloudflared.exe
 
 # =============================================================================
 # Python — venv, cache, builds
