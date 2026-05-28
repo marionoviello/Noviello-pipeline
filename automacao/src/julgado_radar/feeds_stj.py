@@ -1,45 +1,59 @@
-"""STJ Informativos — discover URLs + download com cache local + rate limit.
+"""STJ Informativos — discover + download via Playwright + select dinamico.
 
-Fonte: portal oficial do STJ. Cada informativo tem um numero (1, 2, ...) e um
-PDF associado. O backfill itera por uma faixa de numeros (estimado por ano),
-checa cache, baixa se falta e devolve o path local.
+**Reescrito 2026-05-27**: a estrategia httpx + regex contra a listagem antiga
+falhava porque o portal renderiza tudo via JavaScript (HTML estatico tem ~1KB,
+zero referencias a informativos). Diagnostico completo em
+`docs/superpowers/specs/2026-05-27-radar-stj-calibracao.md`.
 
-Estrategia de descoberta: o STJ publica a lista de informativos por ano em
-HTML simples. Esta funcao raspa essa pagina pra coletar (numero, url_pdf).
+Estrategia nova (validada via probe em automacao/samples/_probe_stj_select.py):
 
-URLs canonicas:
-- Lista por ano: https://www.stj.jus.br/sites/portalp/Paginas/Servicos/Informativo-de-Jurisprudencia.aspx
-- PDFs: https://www.stj.jus.br/publicacaoinstitucional/index.php/informjuris/issue/view/...
+1. Abre processo.stj.jus.br/jurisprudencia/externo/informativo/ via Chromium
+2. Aguarda networkidle (combos sao injetados via JS)
+3. Para cada ano, le `#idInformativoEdicoesCombo{ANO}` enumerando as edicoes
+4. Para baixar, faz `page.select_option(...)` e captura o HTML do bloco
+   `#idInformativoBlocoLista` (renderizado via AJAX apos selecao)
+5. HTML salvo em cache (lugar do antigo PDF). Parser ja sabe trabalhar com
+   tanto texto quanto HTML (extracao via Anthropic structured output).
 
-Os tests evitam rede — usam fixtures HTML/bytes e mockam o downloader.
+Tests injetam um `playwright_factory` falso (context manager retornando uma
+`FakePage` minima) para evitar abrir Chromium real.
 """
 
 from __future__ import annotations
 
-import re
 import time
-from dataclasses import dataclass
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Iterable, Optional
-from urllib.parse import urljoin
+from typing import Any, Callable, ContextManager, Iterable, Optional
 
 from src.julgado_radar.config import RATE_LIMIT_STJ_SEG
 
 
-# Pagina de listagem (default — pode ser overrideada nos testes)
-URL_LISTAGEM_STJ = (
-    "https://www.stj.jus.br/sites/portalp/Paginas/Servicos/"
-    "Informativo-de-Jurisprudencia.aspx"
+URL_PORTAL_INFORMATIVOS = (
+    "https://processo.stj.jus.br/jurisprudencia/externo/informativo/"
 )
+
+# Anos suportados pelo portal (cada um tem seu proprio combo `idInformativoEdicoesCombo{ano}`).
+# 2026 e o teto atual (recalibrar quando STJ publicar 2027).
+ANOS_SUPORTADOS = (2021, 2022, 2023, 2024, 2025, 2026)
 
 
 @dataclass(frozen=True)
 class InformativoRef:
-    """Referencia leve a um Informativo (sem ainda baixar o PDF)."""
+    """Referencia leve a um Informativo do STJ (sem ainda baixar).
+
+    Compatibilidade: campos antigos (numero, ano, url_pdf) preservados
+    para serializacao; novos campos (select_id, option_value, titulo)
+    sao usados pelo novo fluxo Playwright.
+    """
 
     numero: int
     ano: int
-    url_pdf: str
+    url_pdf: str = ""  # legacy — preenchido com URL canonica do portal
+    select_id: str = ""
+    option_value: str = ""
+    titulo: str = ""
 
     @property
     def fonte_key(self) -> str:
@@ -48,120 +62,157 @@ class InformativoRef:
 
     @property
     def filename(self) -> str:
-        return f"inf-{self.numero:04d}.pdf"
+        """Nome do arquivo em cache. HTML no novo fluxo, .pdf no legacy."""
+        return f"inf-{self.numero:04d}.html"
 
 
-# Default HTTP getter — pode ser substituido nos testes (injection).
-# Recebe url -> devolve (status_code, body_bytes).
-HttpGetFn = Callable[[str], tuple[int, bytes]]
+# Interface minima esperada da pagina Playwright (subset de
+# playwright.sync_api.Page usado aqui). Permite mock simples nos testes.
+class _PageLike:  # pragma: no cover — protocolo, nao classe real
+    def goto(self, url: str, *args: Any, **kwargs: Any) -> Any: ...
+    def wait_for_load_state(self, state: str, *args: Any, **kwargs: Any) -> Any: ...
+    def wait_for_timeout(self, ms: int) -> Any: ...
+    def evaluate(self, script: str, *args: Any) -> Any: ...
+    def eval_on_selector(self, selector: str, script: str) -> Any: ...
+    def select_option(self, selector: str, *, value: str) -> Any: ...
 
 
-def _http_get_default(url: str) -> tuple[int, bytes]:  # pragma: no cover — real net
-    """Fallback real (usado fora dos testes). Importa httpx lazy pra nao
-    obrigar a dependencia em testes que mockam."""
-    import httpx  # noqa: PLC0415
-
-    resp = httpx.get(
-        url,
-        headers={"User-Agent": "Noviello-Radar/1.0 (+contato: mario@noviello.adv.br)"},
-        timeout=30.0,
-        follow_redirects=True,
-    )
-    return resp.status_code, resp.content
+# Factory deve retornar um context manager que devolve um objeto compativel
+# com _PageLike (idealmente uma pagina Playwright real, ou um mock nos tests).
+PlaywrightFactory = Callable[[], ContextManager[_PageLike]]
 
 
-# Regex pra capturar links de PDFs de informativos em HTML.
-# Aceita varios formatos (numero como path ou query param).
-_RE_PDF_INFO = re.compile(
-    r'href="([^"]+)"[^>]*>[^<]*Informativo\s+(?:n[º°.]?\s*)?(\d{1,4})',
-    re.IGNORECASE,
-)
+@contextmanager
+def _default_playwright_factory():  # pragma: no cover — real Chromium
+    """Fallback real: abre Chromium headless e devolve a pagina."""
+    from playwright.sync_api import sync_playwright  # noqa: PLC0415
 
-
-def parse_listagem(html: str, base_url: str = URL_LISTAGEM_STJ) -> list[InformativoRef]:
-    """Extrai (numero, url) dos informativos a partir do HTML da listagem.
-
-    Heuristica robusta a variacoes do HTML do portal STJ: procura por
-    'Informativo NNN' associado a um href de PDF.
-    """
-    refs: list[InformativoRef] = []
-    visto: set[int] = set()
-    for href, num_str in _RE_PDF_INFO.findall(html):
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
         try:
-            numero = int(num_str)
-        except ValueError:
-            continue
-        if numero in visto:
-            continue
-        # filtra apenas URLs que parecem ser de PDF
-        if not (href.lower().endswith(".pdf") or "pdf" in href.lower()):
-            continue
-        url_abs = href if href.startswith("http") else urljoin(base_url, href)
-        visto.add(numero)
-        # ano nao vem da listagem direta — chamador decide via filtro_ano
-        refs.append(InformativoRef(numero=numero, ano=0, url_pdf=url_abs))
-    return refs
+            ctx = browser.new_context(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0 Safari/537.36"
+                )
+            )
+            page = ctx.new_page()
+            yield page
+        finally:
+            browser.close()
+
+
+def _abrir_portal(page: _PageLike) -> None:
+    """Carrega o portal e espera os combos serem injetados via JS."""
+    page.goto(URL_PORTAL_INFORMATIVOS, wait_until="networkidle", timeout=30000)
+    page.wait_for_timeout(1500)
+
+
+# JS snippet que enumera as <option> de um <select> e devolve list de
+# {value, text}. Devolvido como lista (nao tuple) por compat com mocks.
+_JS_LISTAR_OPCOES = """(sel) => {
+    const el = document.querySelector(sel);
+    if (!el) return [];
+    return Array.from(el.options)
+        .filter(o => o.value && o.value.trim() !== '')
+        .map(o => ({value: o.value, text: o.textContent.trim()}));
+}"""
+
+
+def _listar_opcoes_do_select(page: _PageLike, select_id: str) -> list[dict]:
+    """Enumera as opcoes (numero do informativo) disponiveis num select por ano."""
+    try:
+        return page.evaluate(_JS_LISTAR_OPCOES, f"#{select_id}") or []
+    except Exception:  # noqa: BLE001
+        return []
 
 
 def descobrir_informativos(
     anos: Iterable[int],
     *,
-    url_listagem: str = URL_LISTAGEM_STJ,
-    http_get: Optional[HttpGetFn] = None,
+    playwright_factory: Optional[PlaywrightFactory] = None,
 ) -> list[InformativoRef]:
-    """Descobre informativos do STJ filtrando pela lista de anos.
+    """Descobre informativos do STJ via Playwright para os anos pedidos.
 
-    Devolve lista de InformativoRef. Sem rede em testes (http_get mockavel).
+    Para cada ano, le o combo `#idInformativoEdicoesCombo{ano}` e cria
+    uma `InformativoRef` por opcao valida. Devolve lista ordenada por
+    (ano DESC, numero DESC) — mais recentes primeiro.
+
+    Sem rede em testes: passar `playwright_factory` retornando context
+    manager com uma `FakePage` que implementa `goto/wait_for_*/evaluate`.
     """
-    getter = http_get or _http_get_default
-    anos_set = set(int(a) for a in anos)
-
-    status, body = getter(url_listagem)
-    if status != 200:
+    factory = playwright_factory or _default_playwright_factory
+    anos_filtrados = sorted(set(int(a) for a in anos if int(a) in ANOS_SUPORTADOS))
+    if not anos_filtrados:
         return []
-    html = body.decode("utf-8", errors="replace")
 
-    refs = parse_listagem(html, base_url=url_listagem)
+    refs: list[InformativoRef] = []
+    with factory() as page:
+        _abrir_portal(page)
+        for ano in anos_filtrados:
+            select_id = f"idInformativoEdicoesCombo{ano}"
+            opcoes = _listar_opcoes_do_select(page, select_id)
+            for opt in opcoes:
+                value = (opt.get("value") or "").strip()
+                if not value:
+                    continue
+                try:
+                    numero = int(value)
+                except ValueError:
+                    # Algumas opcoes podem ter valor nao-numerico (ex: Especiais).
+                    continue
+                refs.append(InformativoRef(
+                    numero=numero,
+                    ano=ano,
+                    url_pdf=URL_PORTAL_INFORMATIVOS,
+                    select_id=select_id,
+                    option_value=value,
+                    titulo=(opt.get("text") or "").strip(),
+                ))
 
-    # Heuristica de ano: STJ ate 2026 tem ~24-30 informativos por ano. Atribuimos
-    # ano pelo numero (ranges aproximados). Esta funcao e best-effort; o backfill
-    # pode confirmar/corrigir ano via metadata do PDF depois.
-    refs_com_ano = [_atribuir_ano(r) for r in refs]
-    return [r for r in refs_com_ano if r.ano in anos_set]
+    # Mais recentes primeiro
+    refs.sort(key=lambda r: (r.ano, r.numero), reverse=True)
+    return refs
 
 
-# Mapeamento aproximado numero -> ano (calibrado em 2026-05).
-# Cada faixa cobre ~24-28 informativos por ano. Atualizar quando o STJ
-# publicar mais ao longo de 2026.
-_FAIXAS_ANO: tuple[tuple[range, int], ...] = (
-    (range(700, 730), 2021),
-    (range(730, 760), 2022),
-    (range(760, 790), 2023),
-    (range(790, 820), 2024),
-    (range(820, 850), 2025),
-    (range(850, 880), 2026),
+# JS pra extrair o HTML renderizado do bloco com a lista de itens do
+# informativo selecionado. O ID do container observado no probe e
+# `#idInformativoBlocoLista` (pode mudar — alternativas como fallback).
+_SELECTORES_BLOCO = (
+    "#idInformativoBlocoLista",
+    "#idBlocoListaInformativos",
+    ".informativo-bloco",
 )
 
 
-def _atribuir_ano(ref: InformativoRef) -> InformativoRef:
-    for faixa, ano in _FAIXAS_ANO:
-        if ref.numero in faixa:
-            return InformativoRef(numero=ref.numero, ano=ano, url_pdf=ref.url_pdf)
-    return ref  # ano=0 = desconhecido (sera filtrado)
+def _extrair_bloco(page: _PageLike) -> str:
+    """Tenta extrair innerHTML do bloco da lista, com fallback entre selectors."""
+    for selector in _SELECTORES_BLOCO:
+        try:
+            html = page.eval_on_selector(selector, "el => el ? el.innerHTML : ''")
+        except Exception:  # noqa: BLE001
+            continue
+        if html and str(html).strip():
+            return str(html)
+    return ""
 
 
 def baixar_informativo(
     ref: InformativoRef,
     cache_dir: Path,
     *,
-    http_get: Optional[HttpGetFn] = None,
+    playwright_factory: Optional[PlaywrightFactory] = None,
     rate_limit_seg: float = RATE_LIMIT_STJ_SEG,
     sleep_fn: Callable[[float], None] = time.sleep,
 ) -> Path:
-    """Baixa o PDF do informativo em cache_dir. Se ja existe (e tamanho > 0),
-    devolve o path direto.
+    """Baixa o HTML renderizado do informativo via Playwright + cache local.
 
-    Levanta FeedSTJError em falha de download.
+    Se o arquivo `cache_dir/inf-NNNN.html` ja existe (e nao-vazio), devolve
+    direto (cache hit, sem rede). Caso contrario, abre o portal, faz
+    select_option e captura `innerHTML` do bloco da lista de itens.
+
+    Levanta `FeedSTJError` se nao conseguir extrair HTML nao-vazio.
     """
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -170,21 +221,40 @@ def baixar_informativo(
     if destino.exists() and destino.stat().st_size > 0:
         return destino
 
-    getter = http_get or _http_get_default
-    status, body = getter(ref.url_pdf)
-    if status != 200 or not body:
+    if not ref.select_id or not ref.option_value:
         raise FeedSTJError(
-            f"falha ao baixar informativo {ref.numero} de {ref.url_pdf} "
-            f"(status={status}, bytes={len(body)})"
+            f"InformativoRef {ref.numero} sem select_id/option_value — "
+            "descobrir_informativos precisa rodar antes"
         )
 
-    # Rate limit BEFORE escrever pro disco (efeito colateral controlado nos tests)
+    factory = playwright_factory or _default_playwright_factory
+    with factory() as page:
+        _abrir_portal(page)
+        try:
+            page.select_option(f"#{ref.select_id}", value=ref.option_value)
+        except Exception as exc:  # noqa: BLE001
+            raise FeedSTJError(
+                f"select_option falhou para informativo {ref.numero}: {exc}"
+            ) from exc
+        # AJAX leva ~2-3s pra atualizar o bloco
+        page.wait_for_timeout(3000)
+        html = _extrair_bloco(page)
+
+    if not html or not html.strip():
+        raise FeedSTJError(
+            f"bloco vazio apos select para informativo {ref.numero} "
+            f"(select={ref.select_id}, value={ref.option_value})"
+        )
+
+    # Rate limit antes de gravar (efeito colateral controlado nos tests)
     if rate_limit_seg > 0:
         sleep_fn(rate_limit_seg)
 
-    destino.write_bytes(body)
+    destino.write_text(html, encoding="utf-8")
     return destino
 
 
 class FeedSTJError(Exception):
+    """Erro no fluxo de descoberta/download de informativos STJ."""
+
     pass

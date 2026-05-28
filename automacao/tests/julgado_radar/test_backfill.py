@@ -1,6 +1,7 @@
 """Testes do backfill — orquestrador STJ + TJ-SP com mocks completos."""
 
 import datetime as _dt
+from contextlib import contextmanager
 from unittest.mock import MagicMock
 
 import pytest
@@ -8,6 +9,40 @@ import pytest
 from src.config import Config
 from src.julgado_radar import backfill, db, feeds_stj
 from src.julgado_radar.config import AREAS_ALVO
+
+
+# ===== FakePage minimal pra mockar Playwright nos testes do backfill =====
+
+class _FakePage:
+    """Mock minimo de playwright.Page — vide tests/julgado_radar/test_feeds_stj.py
+    para a versao canonica. Replica aqui pra evitar acoplamento entre arquivos."""
+
+    def __init__(self, *, selects, blocos):
+        self.selects = selects
+        self.blocos = blocos
+        self._sel = ""
+
+    def goto(self, url, **kwargs): pass
+    def wait_for_load_state(self, *a, **k): pass
+    def wait_for_timeout(self, ms): pass
+
+    def evaluate(self, script, *args):
+        if args and isinstance(args[0], str) and args[0].startswith("#"):
+            return self.selects.get(args[0][1:], [])
+        return []
+
+    def eval_on_selector(self, selector, script):
+        return self.blocos.get(self._sel, "")
+
+    def select_option(self, selector, *, value):
+        self._sel = value
+
+
+def _pw_factory(page):
+    @contextmanager
+    def factory():
+        yield page
+    return factory
 
 
 def _cfg(tmp_path) -> Config:
@@ -86,22 +121,20 @@ def test_executar_backfill_sem_anthropic_pula_stj(tmp_path):
 
 
 def test_executar_backfill_stj_completo_com_mocks(tmp_path, monkeypatch):
+    """Fluxo end-to-end com Playwright mock: 1 informativo, 1 item aceito."""
     cfg = _cfg(tmp_path)
 
-    # Mock HTTP getter retorna HTML com 1 informativo de 2026 (numero 855)
-    html_listagem = (
-        '<a href="/inf-855.pdf">Informativo nº 855</a>'
-    )
-
-    def fake_http_get(url):
-        if url.endswith(".pdf"):
-            return 200, b"%PDF-1.4 dummy"
-        return 200, html_listagem.encode("utf-8")
-
-    # Mock ler_pdf no parser pra evitar pypdf real
-    monkeypatch.setattr(
-        "src.julgado_radar.parser._ler_pdf",
-        lambda p: "PROCESSO\n" + ("Item A texto longo aqui. " * 50),
+    # ano atual sera detectado por executar_backfill — usamos um ano dentro
+    # de ANOS_SUPORTADOS (2026) e povoamos o combo correspondente.
+    ano = _dt.date.today().year
+    if ano not in (2021, 2022, 2023, 2024, 2025, 2026):
+        ano = 2026
+    page = _FakePage(
+        selects={f"idInformativoEdicoesCombo{ano}": [
+            {"value": "0855", "text": "Informativo 855"},
+        ]},
+        blocos={"0855": "<ul><li>PROCESSO REsp 999/SP. Texto longo o suficiente "
+                        "pra passar do limiar de 200 chars. " + ("x " * 80) + "</li></ul>"},
     )
 
     cli = MagicMock()
@@ -113,7 +146,8 @@ def test_executar_backfill_stj_completo_com_mocks(tmp_path, monkeypatch):
 
     stats = backfill.executar_backfill(
         cfg, janela=1, fontes=("stj",),
-        anthropic_cli=cli, http_get=fake_http_get,
+        anthropic_cli=cli,
+        playwright_factory=_pw_factory(page),
         sleep_fn=lambda s: None,
     )
     assert stats.stj_inseridos == 1
@@ -123,16 +157,15 @@ def test_executar_backfill_stj_completo_com_mocks(tmp_path, monkeypatch):
 def test_executar_backfill_stj_idempotente(tmp_path, monkeypatch):
     """Rodar 2x = 0 novos na segunda (fetch_log pula)."""
     cfg = _cfg(tmp_path)
-    html_listagem = '<a href="/inf-855.pdf">Informativo nº 855</a>'
+    ano = _dt.date.today().year
+    if ano not in (2021, 2022, 2023, 2024, 2025, 2026):
+        ano = 2026
 
-    def fake_http_get(url):
-        if url.endswith(".pdf"):
-            return 200, b"%PDF-1.4"
-        return 200, html_listagem.encode("utf-8")
-
-    monkeypatch.setattr(
-        "src.julgado_radar.parser._ler_pdf",
-        lambda p: "PROCESSO\n" + ("X " * 200),
+    page = _FakePage(
+        selects={f"idInformativoEdicoesCombo{ano}": [
+            {"value": "0855", "text": "Informativo 855"},
+        ]},
+        blocos={"0855": "<li>PROCESSO " + ("X " * 200) + "</li>"},
     )
 
     cli = MagicMock()
@@ -143,11 +176,11 @@ def test_executar_backfill_stj_idempotente(tmp_path, monkeypatch):
 
     backfill.executar_backfill(
         cfg, janela=1, fontes=("stj",), anthropic_cli=cli,
-        http_get=fake_http_get, sleep_fn=lambda s: None,
+        playwright_factory=_pw_factory(page), sleep_fn=lambda s: None,
     )
     stats2 = backfill.executar_backfill(
         cfg, janela=1, fontes=("stj",), anthropic_cli=cli,
-        http_get=fake_http_get, sleep_fn=lambda s: None,
+        playwright_factory=_pw_factory(page), sleep_fn=lambda s: None,
     )
     assert stats2.stj_inseridos == 0  # idempotente
 

@@ -89,7 +89,17 @@ def particionar_itens(texto_pdf: str) -> list[str]:
 
 
 def _ler_pdf(pdf_path: Path) -> str:
-    """Extrai texto bruto via pypdf — wrapper local pra facilitar mock."""
+    """Extrai texto bruto de um informativo do STJ.
+
+    Aceita tanto PDF (legacy — pypdf) quanto HTML (novo fluxo Playwright):
+    se o arquivo termina em `.html`, le como texto e desnuda as tags
+    primarias para facilitar a particao em itens. Wrapper local pra
+    facilitar mock nos tests.
+    """
+    pdf_path = Path(pdf_path)
+    if pdf_path.suffix.lower() == ".html":
+        return _ler_html(pdf_path)
+
     from pypdf import PdfReader  # noqa: PLC0415
     try:
         reader = PdfReader(str(pdf_path))
@@ -102,6 +112,34 @@ def _ler_pdf(pdf_path: Path) -> str:
         except Exception as exc:  # noqa: BLE001
             raise ParserError(f"falha ao extrair pagina: {exc}") from exc
     return "\n".join(partes).strip()
+
+
+# Regex pra eliminar tags HTML quando lendo informativo do novo fluxo (STJ Playwright).
+_RE_TAG_HTML = re.compile(r"<[^>]+>")
+_RE_WHITESPACE = re.compile(r"[ \t]+")
+_RE_NEWLINES = re.compile(r"\n{3,}")
+
+
+def _ler_html(html_path: Path) -> str:
+    """Le um informativo HTML (novo fluxo) e devolve texto limpo.
+
+    Preserva quebras de linha entre blocos (<li>, <p>, <div>) pra que o
+    particionador de itens consiga identificar 'PROCESSO ...' no inicio
+    de cada bloco.
+    """
+    try:
+        html = html_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ParserError(f"falha ao ler HTML {html_path}: {exc}") from exc
+
+    # tags de bloco viram \n; depois removemos as restantes
+    bloco = re.sub(r"</(li|p|div|tr|h[1-6]|br)\s*>", "\n", html, flags=re.IGNORECASE)
+    bloco = re.sub(r"<br\s*/?>", "\n", bloco, flags=re.IGNORECASE)
+    bloco = _RE_TAG_HTML.sub("", bloco)
+    # normaliza whitespace dentro de linhas e quebras excessivas
+    linhas = [_RE_WHITESPACE.sub(" ", linha).strip() for linha in bloco.split("\n")]
+    texto = "\n".join(linha for linha in linhas if linha)
+    return _RE_NEWLINES.sub("\n\n", texto).strip()
 
 
 def extrair_item_via_ia(bloco_texto: str, anthropic_cli) -> dict:

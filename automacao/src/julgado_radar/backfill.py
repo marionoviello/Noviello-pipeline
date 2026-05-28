@@ -87,12 +87,14 @@ def _processar_stj(
     anthropic_cli,
     stats: Stats,
     *,
-    http_get: Optional[feeds_stj.HttpGetFn] = None,
+    playwright_factory=None,
     sleep_fn: Callable[[float], None] = time.sleep,
 ) -> None:
-    """Itera informativos da janela, baixa, parseia e indexa."""
+    """Itera informativos da janela, baixa via Playwright, parseia e indexa."""
     try:
-        refs = feeds_stj.descobrir_informativos(anos, http_get=http_get)
+        refs = feeds_stj.descobrir_informativos(
+            anos, playwright_factory=playwright_factory,
+        )
     except Exception as exc:  # noqa: BLE001
         logger.error("falha descoberta STJ: %s", exc)
         stats.stj_erros += 1
@@ -102,9 +104,9 @@ def _processar_stj(
         if indexer.fetch_ja_feito(conn, ref.fonte_key):
             continue
         try:
-            pdf_path = feeds_stj.baixar_informativo(
+            html_path = feeds_stj.baixar_informativo(
                 ref, cache_dir,
-                http_get=http_get, sleep_fn=sleep_fn,
+                playwright_factory=playwright_factory, sleep_fn=sleep_fn,
             )
         except feeds_stj.FeedSTJError as exc:
             indexer.registrar_fetch(conn, ref.fonte_key, "erro", erro=str(exc))
@@ -112,7 +114,7 @@ def _processar_stj(
             continue
 
         try:
-            resultado = parser.extrair_itens_de_informativo(pdf_path, anthropic_cli)
+            resultado = parser.extrair_itens_de_informativo(html_path, anthropic_cli)
         except Exception as exc:  # noqa: BLE001
             indexer.registrar_fetch(conn, ref.fonte_key, "erro", erro=str(exc))
             stats.stj_erros += 1
@@ -133,7 +135,7 @@ def _processar_stj(
                 citacao_voto=item.get("citacao_voto", ""),
                 fundamentos=item.get("fundamentos", []),
                 url_fonte=ref.url_pdf,
-                pdf_local=str(pdf_path),
+                pdf_local=str(html_path),
                 info_origem=ref.fonte_key,
                 indexado_em=agora_iso(),
             ))
@@ -259,8 +261,8 @@ def executar_backfill(
     fontes: Iterable[str] = ("stj", "tjsp"),
     areas: Optional[Iterable[str]] = None,
     anthropic_cli=None,
-    http_get: Optional[feeds_stj.HttpGetFn] = None,
-    http_post: Optional[feeds_tjsp.HttpPostFn] = None,
+    playwright_factory=None,
+    http_post: Optional["feeds_tjsp.HttpPostFn"] = None,
     sleep_fn: Callable[[float], None] = time.sleep,
 ) -> Stats:
     """Backfill ponta-a-ponta. Devolve Stats com contagens + duracao."""
@@ -280,7 +282,7 @@ def executar_backfill(
             else:
                 _processar_stj(
                     conn, anos, cache_dir, anthropic_cli, stats,
-                    http_get=http_get, sleep_fn=sleep_fn,
+                    playwright_factory=playwright_factory, sleep_fn=sleep_fn,
                 )
 
         if "tjsp" in fontes:

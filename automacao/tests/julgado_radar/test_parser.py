@@ -154,3 +154,53 @@ def test_classificar_area_via_ia_delega():
     out = classificar_area_via_ia("ementa sobre usucapiao", cli)
     assert out == "imobiliario"
     cli.classificar_area.assert_called_once()
+
+
+# ===== HTML reader (novo fluxo Playwright) =====
+
+def test_ler_html_remove_tags_e_preserva_quebras(tmp_path):
+    """_ler_html converte HTML para texto preservando linhas por bloco."""
+    from src.julgado_radar.parser import _ler_html
+
+    html_path = tmp_path / "inf-0855.html"
+    html_path.write_text(
+        "<ul>"
+        "<li>PROCESSO REsp 999/SP — texto longo</li>"
+        "<li>PROCESSO HC 888 — outro texto</li>"
+        "</ul>",
+        encoding="utf-8",
+    )
+    texto = _ler_html(html_path)
+    assert "<li>" not in texto
+    assert "PROCESSO REsp 999/SP" in texto
+    assert "PROCESSO HC 888" in texto
+    # cada <li> vira uma linha
+    linhas = [linha for linha in texto.split("\n") if linha.strip()]
+    assert len(linhas) == 2
+
+
+def test_extrair_itens_de_informativo_le_html_quando_extensao_html(tmp_path):
+    """extrair_itens_de_informativo deve aceitar .html, nao so .pdf."""
+    cli = MagicMock()
+    cli.extrair_item_stj.return_value = {
+        "relevante": True, "area": "imobiliario",
+        "processo_id": "REsp 1", "tese": "Tese teste",
+    }
+    html_path = tmp_path / "inf-0855.html"
+    html_path.write_text(
+        "<ul><li>PROCESSO " + ("X " * 200) + "</li></ul>",
+        encoding="utf-8",
+    )
+    r = extrair_itens_de_informativo(html_path, cli)
+    assert len(r["aceitos"]) == 1
+    assert r["aceitos"][0]["processo_id"] == "REsp 1"
+
+
+def test_ler_html_normaliza_quebras_excessivas(tmp_path):
+    from src.julgado_radar.parser import _ler_html
+
+    html_path = tmp_path / "x.html"
+    html_path.write_text("<p>A</p>\n\n\n\n<p>B</p>", encoding="utf-8")
+    texto = _ler_html(html_path)
+    # nao deve ter mais de 2 newlines seguidos
+    assert "\n\n\n" not in texto

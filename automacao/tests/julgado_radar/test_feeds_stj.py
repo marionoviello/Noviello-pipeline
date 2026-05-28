@@ -1,169 +1,297 @@
-"""Testes do feeds_stj — discover URL + download com cache + rate limit.
+"""Testes do feeds_stj — discover + download via Playwright mock.
 
-Sem rede: HTTP getter e mockado, sleep e capturado.
+Sem rede: `playwright_factory` injetavel devolve uma FakePage que implementa
+o subset usado (goto/wait_for_*/evaluate/eval_on_selector/select_option).
 """
+
+from contextlib import contextmanager
 
 import pytest
 
 from src.julgado_radar.feeds_stj import (
+    ANOS_SUPORTADOS,
     FeedSTJError,
     InformativoRef,
+    URL_PORTAL_INFORMATIVOS,
     baixar_informativo,
     descobrir_informativos,
-    parse_listagem,
 )
 
 
-HTML_LISTAGEM_FAKE = """
-<html>
-<body>
-  <h2>Informativos de Jurisprudencia</h2>
-  <ul>
-    <li><a href="/informativos/inf-789.pdf">Informativo 789</a></li>
-    <li><a href="/informativos/inf-825.pdf">Informativo 825</a></li>
-    <li><a href="/informativos/inf-855.pdf">Informativo n. 855</a></li>
-    <li><a href="https://www.stj.jus.br/x/inf-700.pdf">Informativo nº 700</a></li>
-    <li><a href="/algum-outro-doc.pdf">Documento Avulso</a></li>
-  </ul>
-</body></html>
-"""
+# ===== FakePage — simula Playwright Page para os testes =====
+
+class FakePage:
+    """Substituto minimo de playwright.sync_api.Page para os testes.
+
+    Aceita um dict `selects` mapeando select_id -> lista de
+    {value, text} e um dict `blocos` mapeando option_value -> HTML.
+    Apos `select_option`, `eval_on_selector("#idInformativoBlocoLista", ...)`
+    devolve o HTML do bloco correspondente.
+    """
+
+    def __init__(
+        self,
+        *,
+        selects: dict | None = None,
+        blocos: dict | None = None,
+        goto_raises: Exception | None = None,
+    ):
+        self.selects = selects or {}
+        self.blocos = blocos or {}
+        self.goto_raises = goto_raises
+        self.calls: list[tuple] = []  # log de chamadas pra asserts
+        self._selecionado: str = ""
+
+    def goto(self, url, **kwargs):
+        self.calls.append(("goto", url, kwargs))
+        if self.goto_raises:
+            raise self.goto_raises
+
+    def wait_for_load_state(self, state, **kwargs):
+        self.calls.append(("wait_for_load_state", state))
+
+    def wait_for_timeout(self, ms):
+        self.calls.append(("wait_for_timeout", ms))
+
+    def evaluate(self, script, *args):
+        # _listar_opcoes_do_select chama com seletor `#idInformativoEdicoesCombo{ano}`
+        if args and isinstance(args[0], str) and args[0].startswith("#"):
+            select_id = args[0][1:]
+            return self.selects.get(select_id, [])
+        return []
+
+    def eval_on_selector(self, selector, script):
+        # _extrair_bloco passa por varios selectors; devolve o HTML do bloco
+        # do option selecionado, independente do selector (simplificacao).
+        if self._selecionado:
+            return self.blocos.get(self._selecionado, "")
+        return ""
+
+    def select_option(self, selector, *, value):
+        self.calls.append(("select_option", selector, value))
+        self._selecionado = value
 
 
-def test_parse_listagem_extrai_informativos():
-    refs = parse_listagem(HTML_LISTAGEM_FAKE)
-    numeros = sorted(r.numero for r in refs)
-    assert numeros == [700, 789, 825, 855]
+def _factory(page: FakePage):
+    """Constroi um playwright_factory que cede `page` como context manager."""
+    @contextmanager
+    def factory():
+        yield page
+    return factory
 
 
-def test_parse_listagem_resolve_url_relativa():
-    refs = parse_listagem(HTML_LISTAGEM_FAKE, base_url="https://www.stj.jus.br/pagina")
-    by_num = {r.numero: r for r in refs}
-    assert by_num[789].url_pdf.startswith("https://www.stj.jus.br/informativos/")
-    assert by_num[700].url_pdf == "https://www.stj.jus.br/x/inf-700.pdf"
+# ===== InformativoRef =====
+
+def test_informativo_ref_fonte_key_formato():
+    ref = InformativoRef(numero=837, ano=2024)
+    assert ref.fonte_key == "stj-informativo-837"
 
 
-def test_parse_listagem_ignora_links_nao_pdf():
-    html = '<a href="/algo.html">Informativo 999</a>'
-    assert parse_listagem(html) == []
+def test_informativo_ref_filename_zero_padded_html():
+    ref = InformativoRef(numero=1, ano=2021)
+    assert ref.filename == "inf-0001.html"
 
 
-def test_parse_listagem_dedupica_numero_repetido():
-    html = (
-        '<a href="/a/inf-1.pdf">Informativo 1</a>'
-        '<a href="/b/inf-1.pdf">Informativo 1</a>'
+def test_informativo_ref_aceita_campos_playwright():
+    ref = InformativoRef(
+        numero=837,
+        ano=2024,
+        select_id="idInformativoEdicoesCombo2024",
+        option_value="0837",
+        titulo="Informativo 837 (15/04/2024)",
     )
-    refs = parse_listagem(html)
-    assert len(refs) == 1
-    assert refs[0].numero == 1
+    assert ref.select_id == "idInformativoEdicoesCombo2024"
+    assert ref.option_value == "0837"
 
 
-def test_descobrir_informativos_filtra_por_ano():
-    """Numero 825 esta na faixa de 2025; 700 e 2021."""
-    def fake_get(url):
-        return 200, HTML_LISTAGEM_FAKE.encode("utf-8")
+# ===== descobrir_informativos =====
 
-    refs = descobrir_informativos([2025], http_get=fake_get)
+def test_descobrir_informativos_le_combo_do_ano():
+    page = FakePage(selects={
+        "idInformativoEdicoesCombo2024": [
+            {"value": "0837", "text": "Informativo 837 (15/04/2024)"},
+            {"value": "0836", "text": "Informativo 836 (01/04/2024)"},
+        ],
+    })
+    refs = descobrir_informativos([2024], playwright_factory=_factory(page))
+    assert len(refs) == 2
     numeros = sorted(r.numero for r in refs)
-    assert numeros == [825]
+    assert numeros == [836, 837]
+    assert refs[0].ano == 2024
+    assert refs[0].select_id == "idInformativoEdicoesCombo2024"
 
 
-def test_descobrir_informativos_multi_anos():
-    def fake_get(url):
-        return 200, HTML_LISTAGEM_FAKE.encode("utf-8")
-
-    refs = descobrir_informativos([2021, 2025], http_get=fake_get)
-    numeros = sorted(r.numero for r in refs)
-    assert 700 in numeros  # 2021
-    assert 825 in numeros  # 2025
-
-
-def test_descobrir_informativos_listagem_indisponivel():
-    def fake_get(url):
-        return 503, b""
-    assert descobrir_informativos([2025], http_get=fake_get) == []
-
-
-def test_informativo_ref_fonte_key():
-    ref = InformativoRef(numero=789, ano=2024, url_pdf="x")
-    assert ref.fonte_key == "stj-informativo-789"
+def test_descobrir_informativos_ordena_mais_recente_primeiro():
+    page = FakePage(selects={
+        "idInformativoEdicoesCombo2023": [
+            {"value": "0800", "text": "Inf 800"},
+        ],
+        "idInformativoEdicoesCombo2025": [
+            {"value": "0850", "text": "Inf 850"},
+        ],
+    })
+    refs = descobrir_informativos([2023, 2025], playwright_factory=_factory(page))
+    assert refs[0].ano == 2025
+    assert refs[0].numero == 850
+    assert refs[1].ano == 2023
 
 
-def test_informativo_ref_filename_zero_padded():
-    ref = InformativoRef(numero=1, ano=2021, url_pdf="x")
-    assert ref.filename == "inf-0001.pdf"
+def test_descobrir_informativos_filtra_anos_nao_suportados():
+    """Anos fora de ANOS_SUPORTADOS (ex: 2019, 2030) devem ser ignorados."""
+    page = FakePage(selects={})
+    refs = descobrir_informativos([2019, 2030], playwright_factory=_factory(page))
+    assert refs == []
 
 
-def test_baixar_informativo_cria_arquivo(tmp_path):
-    sleeps = []
-    ref = InformativoRef(numero=789, ano=2024, url_pdf="https://x/inf.pdf")
+def test_descobrir_informativos_ignora_valores_nao_numericos():
+    """Combo de Especiais pode ter values nao-numericos — sao filtrados."""
+    page = FakePage(selects={
+        "idInformativoEdicoesCombo2024": [
+            {"value": "0837", "text": "Inf 837"},
+            {"value": "ESPECIAL-X", "text": "Especial X"},
+            {"value": "", "text": "vazio"},
+        ],
+    })
+    refs = descobrir_informativos([2024], playwright_factory=_factory(page))
+    numeros = [r.numero for r in refs]
+    assert numeros == [837]
 
-    def fake_get(url):
-        return 200, b"%PDF-1.4 conteudo fake"
+
+def test_descobrir_informativos_combo_vazio_devolve_lista_vazia():
+    page = FakePage(selects={"idInformativoEdicoesCombo2024": []})
+    refs = descobrir_informativos([2024], playwright_factory=_factory(page))
+    assert refs == []
+
+
+def test_descobrir_informativos_abre_portal_uma_vez():
+    """Reusa a mesma pagina pra todos os anos — 1 goto, N evaluates."""
+    page = FakePage(selects={
+        "idInformativoEdicoesCombo2024": [{"value": "0837", "text": "x"}],
+        "idInformativoEdicoesCombo2025": [{"value": "0850", "text": "y"}],
+    })
+    descobrir_informativos([2024, 2025], playwright_factory=_factory(page))
+    gotos = [c for c in page.calls if c[0] == "goto"]
+    assert len(gotos) == 1
+    assert gotos[0][1] == URL_PORTAL_INFORMATIVOS
+
+
+# ===== baixar_informativo =====
+
+def test_baixar_informativo_grava_html_no_cache(tmp_path):
+    ref = InformativoRef(
+        numero=837, ano=2024,
+        select_id="idInformativoEdicoesCombo2024", option_value="0837",
+    )
+    page = FakePage(blocos={"0837": "<ul><li>Item A</li><li>Item B</li></ul>"})
+    sleeps: list[float] = []
 
     destino = baixar_informativo(
         ref, tmp_path / "cache",
-        http_get=fake_get, sleep_fn=sleeps.append,
+        playwright_factory=_factory(page),
+        sleep_fn=sleeps.append,
     )
     assert destino.exists()
-    assert destino.read_bytes() == b"%PDF-1.4 conteudo fake"
-    # rate limit foi respeitado (1 sleep ~1seg)
+    assert destino.read_text(encoding="utf-8") == "<ul><li>Item A</li><li>Item B</li></ul>"
+    # rate limit aplicou
     assert len(sleeps) == 1
     assert sleeps[0] >= 1.0
+    # select_option foi chamado com o value correto
+    select_calls = [c for c in page.calls if c[0] == "select_option"]
+    assert select_calls and select_calls[0][2] == "0837"
 
 
-def test_baixar_informativo_usa_cache_quando_ja_existe(tmp_path):
-    """Se ja existe no cache, nao chama HTTP nem sleep."""
-    sleeps = []
+def test_baixar_informativo_cache_hit_nao_chama_playwright(tmp_path):
+    """Se ja existe HTML no cache, nao abre Chromium nem dorme."""
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
-    ref = InformativoRef(numero=789, ano=2024, url_pdf="https://x/inf.pdf")
-    arquivo_existente = cache_dir / ref.filename
-    arquivo_existente.write_bytes(b"cache antigo")
+    ref = InformativoRef(
+        numero=837, ano=2024,
+        select_id="idInformativoEdicoesCombo2024", option_value="0837",
+    )
+    pre_existente = cache_dir / ref.filename
+    pre_existente.write_text("<cache antigo />", encoding="utf-8")
 
-    chamadas = []
-
-    def fake_get(url):
-        chamadas.append(url)
-        return 200, b"deveria nao ser chamado"
+    # Factory deve nao ser chamada — se for, FakePage levanta nada mas
+    # podemos detectar via len(calls)
+    page = FakePage(blocos={"0837": "<novo />"})
+    sleeps: list[float] = []
 
     destino = baixar_informativo(
-        ref, cache_dir, http_get=fake_get, sleep_fn=sleeps.append,
+        ref, cache_dir,
+        playwright_factory=_factory(page),
+        sleep_fn=sleeps.append,
     )
-    assert destino == arquivo_existente
-    assert destino.read_bytes() == b"cache antigo"  # nao sobrescreveu
-    assert chamadas == []  # cache hit, sem HTTP
-    assert sleeps == []  # sem rate limit
+    assert destino == pre_existente
+    assert destino.read_text(encoding="utf-8") == "<cache antigo />"
+    assert page.calls == []  # nada de Playwright
+    assert sleeps == []
 
 
-def test_baixar_informativo_falha_404(tmp_path):
-    ref = InformativoRef(numero=789, ano=2024, url_pdf="https://x/inf.pdf")
-
-    def fake_get(url):
-        return 404, b""
-
-    with pytest.raises(FeedSTJError, match="status=404"):
-        baixar_informativo(ref, tmp_path / "cache", http_get=fake_get, sleep_fn=lambda s: None)
-
-
-def test_baixar_informativo_falha_corpo_vazio(tmp_path):
-    ref = InformativoRef(numero=789, ano=2024, url_pdf="https://x/inf.pdf")
-
-    def fake_get(url):
-        return 200, b""
-
-    with pytest.raises(FeedSTJError):
-        baixar_informativo(ref, tmp_path / "cache", http_get=fake_get, sleep_fn=lambda s: None)
+def test_baixar_informativo_sem_select_id_falha(tmp_path):
+    """Ref sem select_id (legacy ou criado a mao) — erro claro."""
+    ref = InformativoRef(numero=837, ano=2024)  # sem select_id
+    page = FakePage()
+    with pytest.raises(FeedSTJError, match="sem select_id"):
+        baixar_informativo(
+            ref, tmp_path / "cache",
+            playwright_factory=_factory(page),
+            sleep_fn=lambda s: None,
+        )
 
 
-def test_baixar_informativo_respeita_rate_limit_customizado(tmp_path):
-    ref = InformativoRef(numero=789, ano=2024, url_pdf="x")
-    sleeps = []
+def test_baixar_informativo_bloco_vazio_falha(tmp_path):
+    """Se nenhum dos selectors retorna HTML — FeedSTJError."""
+    ref = InformativoRef(
+        numero=837, ano=2024,
+        select_id="idInformativoEdicoesCombo2024", option_value="0837",
+    )
+    page = FakePage(blocos={})  # nenhum HTML
+    with pytest.raises(FeedSTJError, match="bloco vazio"):
+        baixar_informativo(
+            ref, tmp_path / "cache",
+            playwright_factory=_factory(page),
+            sleep_fn=lambda s: None,
+        )
 
-    def fake_get(url):
-        return 200, b"%PDF dados"
 
+def test_baixar_informativo_rate_limit_customizado(tmp_path):
+    ref = InformativoRef(
+        numero=837, ano=2024,
+        select_id="idInformativoEdicoesCombo2024", option_value="0837",
+    )
+    page = FakePage(blocos={"0837": "<x/>"})
+    sleeps: list[float] = []
     baixar_informativo(
-        ref, tmp_path,
-        http_get=fake_get, sleep_fn=sleeps.append, rate_limit_seg=2.5,
+        ref, tmp_path / "cache",
+        playwright_factory=_factory(page),
+        sleep_fn=sleeps.append,
+        rate_limit_seg=2.5,
     )
     assert sleeps == [2.5]
+
+
+def test_baixar_informativo_select_option_explode_propaga_feed_error(tmp_path):
+    ref = InformativoRef(
+        numero=999, ano=2024,
+        select_id="idInformativoEdicoesCombo2024", option_value="0999",
+    )
+
+    class PageQuebrada(FakePage):
+        def select_option(self, selector, *, value):
+            raise RuntimeError("timeout aguardando opt")
+
+    page = PageQuebrada(blocos={})
+    with pytest.raises(FeedSTJError, match="select_option falhou"):
+        baixar_informativo(
+            ref, tmp_path / "cache",
+            playwright_factory=_factory(page),
+            sleep_fn=lambda s: None,
+        )
+
+
+# ===== Anos suportados — guard de regressao =====
+
+def test_anos_suportados_inclui_2021_a_2026():
+    assert 2021 in ANOS_SUPORTADOS
+    assert 2026 in ANOS_SUPORTADOS
+    # quando STJ publicar 2027, atualizar essa constante
