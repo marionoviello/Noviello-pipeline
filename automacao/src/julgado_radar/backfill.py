@@ -331,8 +331,9 @@ def _construir_argparser() -> argparse.ArgumentParser:
         help=f"Janela de anos (default: {JANELA_ANOS_DEFAULT})",
     )
     p.add_argument(
-        "--fontes", default="stj,tjsp",
-        help="Fontes separadas por virgula (default: stj,tjsp)",
+        "--fontes", default="stj",
+        help="Fontes separadas por virgula (default: stj). "
+             "TJ-SP bloqueado por reCAPTCHA v3 — ver feeds_tjsp.py.",
     )
     p.add_argument(
         "--areas", default=",".join(AREAS_ALVO),

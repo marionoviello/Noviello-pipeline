@@ -100,9 +100,27 @@ futuras (não implementadas):
 - Implementar coleta do informativo "mais recente" que o portal carrega
   como default (Playwright pega o último sem precisar selecionar)
 
-## TJ-SP
+## TJ-SP — BLOQUEADO por reCAPTCHA v3 (probe 2026-05-29)
 
-Wave 2 (session-aware httpx + CSRF) implementada e testada com mocks, mas
-não probada contra portal real. Smoke separado pendente — comando previsto:
-`python -m src.julgado_radar.backfill --janela 1 --fontes tjsp --areas imobiliario`
-(sem custo Anthropic — TJ-SP não usa IA, só regex na ementa).
+Smoke real executado. Resultado: **o esaj cjsg é protegido por reCAPTCHA v3**
+(invisível, baseado em score — `recaptcha/api.js?render=SITE_KEY`).
+
+O que funciona: o GET prévio em `consultaCompleta.do` retorna 200 e estabelece
+o JSESSIONID. A sessão httpx está correta.
+
+O que NÃO funciona: o POST em `resultadoCompleta.do` exige um token reCAPTCHA
+válido (`g-recaptcha-response`) que httpx puro não consegue gerar. Sem ele, o
+POST devolve a própria página de consulta, não os resultados. Os campos reais
+do form também divergiam do código (`dados.buscaEmenta`, não
+`dadosConsulta.pesquisaLivre`) — corrigi-los não basta, o captcha é a barreira.
+
+**Decisão (2026-05-29):** Radar opera **só-STJ** por ora. O default do
+backfill é `--fontes stj`. O código do `feeds_tjsp.py` foi mantido (a sessão
+está correta) com aviso de bloqueio no topo. Probes em `samples/_probe_tjsp*.py`.
+
+Para reativar o TJ-SP no futuro:
+- **Playwright** (navegador real executa o JS do reCAPTCHA) — mas o v3 dá
+  score e headless costuma ser barrado. Incerto.
+- **Serviço de captcha** (2captcha/anti-captcha) — pago.
+- **Fonte alternativa** — API oficial de jurisprudência do TJ-SP (se existir);
+  DataJud do CNJ tem metadados de processo, não ementas de acórdão.

@@ -254,7 +254,7 @@ def test_argparser_defaults():
     p = backfill._construir_argparser()
     args = p.parse_args([])
     assert args.janela == 5
-    assert args.fontes == "stj,tjsp"
+    assert args.fontes == "stj"  # TJ-SP bloqueado por reCAPTCHA v3 (2026-05-29)
     assert args.dry_run is False
 
 

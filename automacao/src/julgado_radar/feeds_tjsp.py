@@ -1,11 +1,23 @@
 """TJ-SP CJSG (Consulta de Jurisprudencia de Segundo Grau) — scraper com sessao.
 
-**Recalibrado 2026-05-27**: o POST direto em
-`esaj.tjsp.jus.br/cjsg/resultadoCompleta.do` retorna 403 sem cookies de
-sessao. Diagnostico em
-`docs/superpowers/specs/2026-05-27-radar-stj-calibracao.md`.
+==============================================================================
+BLOQUEADO (probe 2026-05-29): o portal esaj.tjsp.jus.br/cjsg usa reCAPTCHA v3
+(invisivel, baseado em score — recaptcha/api.js?render=SITE_KEY). O fluxo
+session-aware abaixo esta CORRETO (GET previo funciona, JSESSIONID e mantido),
+mas o POST de busca exige um token reCAPTCHA valido que httpx puro NAO gera.
+Resultado: o POST volta a pagina de consulta em vez de resultados.
 
-Estrategia nova ("session-aware scraping"):
+Campos reais do form (descobertos no probe, divergem do que estava no codigo):
+  dados.buscaEmenta, dados.buscaInteiroTeor, dados.dtJulgamentoInicio/Fim,
+  tipoDecisaoSelecionados, dados.ordenarPor, conversationId (nao ha _csrf).
+
+Decisao: Radar opera SO-STJ por ora (STJ funciona via PDF anual). Para
+reativar o TJ-SP seria preciso Playwright (executa o JS do reCAPTCHA, mas o
+v3 da score e headless costuma ser barrado) ou um servico de captcha pago.
+Probes em samples/_probe_tjsp*.py. Codigo mantido para referencia futura.
+==============================================================================
+
+Estrategia (session-aware scraping) — funcional ate a barreira do captcha:
 
 1. Abrir um `httpx.Client` (mantem cookies entre requests)
 2. GET previo em `esaj.tjsp.jus.br/cjsg/consultaCompleta.do` — devolve
