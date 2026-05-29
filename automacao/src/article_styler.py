@@ -47,9 +47,9 @@ _CTA_HTML = """  <aside class="cta-final">
     <p>Cada caso tem particularidades que merecem análise individualizada. A Noviello Advocacia atende presencial e remoto, com agendamento direto.</p>
     <a class="cta-botao" href="https://noviello.adv.br/contato">Agendar consulta</a>
     <div class="cta-contato">
-      <span>📞 <a href="tel:+551141115560">(11) 4111-5560</a></span>
-      <span>🌐 <a href="https://noviello.adv.br">noviello.adv.br</a></span>
-      <span>📱 <a href="https://instagram.com/novielloadv">@novielloadv</a></span>
+      <span><a href="tel:+551141115560">(11) 4111-5560</a></span>
+      <span><a href="https://noviello.adv.br">noviello.adv.br</a></span>
+      <span><a href="https://instagram.com/novielloadv">@novielloadv</a></span>
     </div>
   </aside>"""
 
