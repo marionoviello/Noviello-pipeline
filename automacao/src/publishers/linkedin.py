@@ -91,36 +91,53 @@ def _gerar_pdf(slides: list[Path], destino: Path) -> Path:
     return destino
 
 
-def publish(peca: Peca, cfg, logger) -> PublishResult:
-    li = peca.ativos("linkedin") or {}
-    if not li:
-        return PublishResult.pulado(NOME, "sem ativos LinkedIn no MANIFEST")
+def _distribuicao_padrao() -> dict:
+    return {
+        "feedDistribution": "MAIN_FEED",
+        "targetEntities": [],
+        "thirdPartyDistributionChannels": [],
+    }
 
-    token = cfg.linkedin["access_token"]
-    autor = _person_urn(cfg.linkedin["person_urn"])
 
-    # texto: do arquivo apontado pelo MANIFEST
-    texto = ""
-    if li.get("texto") and Path(li["texto"]).exists():
-        texto = Path(li["texto"]).read_text(encoding="utf-8").strip()
+def _finalizar_post(resp) -> PublishResult:
+    post_urn = resp.headers.get("x-restli-id", "")
+    url = f"https://www.linkedin.com/feed/update/{post_urn}" if post_urn else ""
+    return PublishResult.sucesso(NOME, url, ids={"post_urn": post_urn})
 
-    # PDF dos slides do carrossel (toda a peca — sem limite de 10 do IG)
-    slides = _slides_da_peca(peca)
-    if not slides:
-        return PublishResult.pulado(NOME, "sem slides JPG para montar o PDF")
 
+def _publicar_texto(token: str, autor: str, texto: str, peca: Peca, logger) -> PublishResult:
+    """Post de texto puro — sem documento/carrossel anexado."""
+    if not texto:
+        return PublishResult.pulado(NOME, "post de texto sem conteudo (texto vazio)")
+    corpo: dict = {
+        "author": autor,
+        "commentary": texto,
+        "visibility": "PUBLIC",
+        "distribution": _distribuicao_padrao(),
+        "lifecycleState": "PUBLISHED",
+        "isReshareDisabledByAuthor": False,
+    }
+    logger.info("linkedin", peca_id=peca.peca_id, modo="texto", chars=len(texto))
+    resp = _post_json("posts", token, corpo)
+    return _finalizar_post(resp)
+
+
+def _publicar_carrossel(
+    token: str, autor: str, texto: str, slides: list[Path], peca: Peca, logger
+) -> PublishResult:
+    """Post com documento PDF (todos os slides do carrossel)."""
     pasta = slides[0].parent
     pdf_path = pasta / "carrossel-linkedin.pdf"
     _gerar_pdf(slides, pdf_path)
     logger.info(
         "linkedin",
         peca_id=peca.peca_id,
+        modo="carrossel",
         pdf=str(pdf_path),
         slides=len(slides),
         pdf_kb=pdf_path.stat().st_size // 1024,
     )
 
-    # initializeUpload de documento
     init = _post_json(
         "documents?action=initializeUpload",
         token,
@@ -129,16 +146,11 @@ def publish(peca: Peca, cfg, logger) -> PublishResult:
     doc_urn = init["document"]
     _put_bytes(init["uploadUrl"], token, pdf_path.read_bytes())
 
-    # POST /posts com o documento
     corpo: dict = {
         "author": autor,
         "commentary": texto,
         "visibility": "PUBLIC",
-        "distribution": {
-            "feedDistribution": "MAIN_FEED",
-            "targetEntities": [],
-            "thirdPartyDistributionChannels": [],
-        },
+        "distribution": _distribuicao_padrao(),
         "content": {
             "media": {
                 "id": doc_urn,
@@ -148,8 +160,38 @@ def publish(peca: Peca, cfg, logger) -> PublishResult:
         "lifecycleState": "PUBLISHED",
         "isReshareDisabledByAuthor": False,
     }
-
     resp = _post_json("posts", token, corpo)
-    post_urn = resp.headers.get("x-restli-id", "")
-    url = f"https://www.linkedin.com/feed/update/{post_urn}" if post_urn else ""
-    return PublishResult.sucesso(NOME, url, ids={"post_urn": post_urn})
+    return _finalizar_post(resp)
+
+
+def publish(peca: Peca, cfg, logger) -> PublishResult:
+    """Publica no LinkedIn. Dois formatos:
+
+    - texto puro: post so com commentary (sem documento). Acionado por
+      ativos.linkedin.formato == 'texto', ou como fallback quando ha texto
+      mas nenhum slide JPG disponivel.
+    - carrossel: documento PDF com todos os slides (formato 'carrossel' ou
+      default quando ha slides).
+    """
+    li = peca.ativos("linkedin") or {}
+    if not li:
+        return PublishResult.pulado(NOME, "sem ativos LinkedIn no MANIFEST")
+
+    token = cfg.linkedin["access_token"]
+    autor = _person_urn(cfg.linkedin["person_urn"])
+
+    texto = ""
+    if li.get("texto") and Path(li["texto"]).exists():
+        texto = Path(li["texto"]).read_text(encoding="utf-8").strip()
+
+    slides = _slides_da_peca(peca)
+    formato = (li.get("formato") or "").strip().lower()
+
+    # decisao do modo: flag explicita tem prioridade; senao, infere pela
+    # presenca de slides (sem slides + com texto => texto puro).
+    if formato == "texto" or (formato != "carrossel" and not slides):
+        return _publicar_texto(token, autor, texto, peca, logger)
+
+    if not slides:
+        return PublishResult.pulado(NOME, "sem slides JPG para montar o PDF")
+    return _publicar_carrossel(token, autor, texto, slides, peca, logger)
