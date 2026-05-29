@@ -32,16 +32,21 @@ Notarial").
    fontes verificadas. Se a norma não confirmar, parar e pedir material ao Mario.
 
 2. **Artigo-âncora** via skill `noviello-blog-editor-chefe` (+ articulista quando
-   Imobiliário/Urbanístico/Sucessório/Tributário). Renderizar no template
-   `templates/artigo-noviello.html`. Regras fixas: sem travessões, sem emojis no
-   corpo, voz ativa, "você" no blog principal, box ⚖ Saiba que e 📖 Exemplo.
-   Logo branco no hero. **Sem imagem destacada no corpo** (ver item 6).
+   Imobiliário/Urbanístico/Sucessório/Tributário). Regras fixas: sem travessões,
+   sem emojis no corpo, voz ativa, "você" no blog principal. Boxes "Saiba que" e
+   "Exemplo" com **barra lateral claret, SEM ícone** (nada de ⚖/📖 — ver
+   `#BrandLockProtocol`). Logo branco no hero. **Sem imagem destacada no corpo**
+   (ver item 6).
 
-3. **Capa** (card 1200x630) no DNA da marca: gradiente claret→chocolate, logo
-   branco no rodapé, Cinzel/Poppins. **Dourado SÓ como filete** (linhas finas),
-   nunca em textos/chips/botões — resto nas cores do manual (Claret #68192E,
-   Chocolate Cosmos #540D1D, Anti-flash White #F1F3F2 + creme/branco). Renderizar
-   via Playwright HTML→JPG. Serve como `og:image` (compartilhamento).
+3. **Capa** (card 1200x630): gradiente claret→cosmos, logo branco no rodapé,
+   Cinzel/Poppins/Cormorant. **Allowlist FECHADA** (Claret #68192E, Cosmos
+   #540D1D, Anti-flash #F1F3F2, Branco, texto #1A1A1A/#444444). **Sem dourado e
+   sem creme** — em fundo escuro, filetes/detalhes em anti-flash. Sem ícone
+   clichê (losango/quadrado anti-flash no lugar). Renderizar via Playwright
+   HTML→JPG. Serve como `og:image`.
+
+   **Antes de entregar qualquer HTML: rodar `python scripts/brandlock.py
+   <arquivo>` e só seguir com saída `OK`.** Ver `docs/brand-lock-protocol.md`.
 
 4. **LinkedIn** (B2B): texto puro, sem "Direito Sênior", máx 3 hashtags, hook nos
    primeiros ~210 chars, sem travessões/asteriscos/emojis. Publisher
