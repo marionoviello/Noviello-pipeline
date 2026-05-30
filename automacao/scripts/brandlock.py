@@ -24,7 +24,8 @@ _RE_EMOJI = re.compile(
 _RE_GLYPH_CSS = re.compile(
     r'content:\s*["\']\\?(2696|2694|26B1|1F4D6|1F3DB)', re.IGNORECASE
 )
-_RE_HEX = re.compile(r"#[0-9a-fA-F]{3,8}")
+# cor real e seguida de nao-alfanumerico; evita falso-positivo de ancora href="#efe..."
+_RE_HEX = re.compile(r"#[0-9a-fA-F]{6}(?![0-9a-zA-Z])|#[0-9a-fA-F]{3}(?![0-9a-zA-Z])")
 _RE_FONT = re.compile(
     r"font-family:[^;}]*\b(inter|roboto|arial|helvetica)\b", re.IGNORECASE
 )

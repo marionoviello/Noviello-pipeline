@@ -49,8 +49,8 @@ def test_estilizar_categoria_chip_e_tags():
         categorias=["Sucessório"],
         tags=["doação", "usufruto", "ITCMD"],
     )
-    # chip da primeira categoria no header
-    assert '<span class="chip">Sucessório</span>' in out
+    # area no kicker do hero sintetico (categoria em maiusculas)
+    assert "SUCESSÓRIO" in out and 'class="kicker"' in out
     # tags renderizadas no rodape
     assert "tags-rodape" in out and "doação" in out and "ITCMD" in out
 

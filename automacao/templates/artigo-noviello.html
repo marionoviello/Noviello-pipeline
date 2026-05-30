@@ -41,24 +41,16 @@
     line-height:1.75;font-size:18px;color:var(--ink);overflow:hidden;
   }
 
-  /* ===== Hero ===== */
-  .noviello-artigo .hero{
-    background:linear-gradient(180deg,var(--claret) 0%,var(--cosmos) 100%);
-    color:var(--anti-flash);padding:52px 80px 58px;text-align:center;position:relative;
-  }
-  .noviello-artigo .hero.com-imagem{background-size:cover;background-position:center;background-blend-mode:multiply}
-  .noviello-artigo .hero.com-imagem::before{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(104,25,46,.88) 0%,rgba(84,13,29,.94) 100%);z-index:0}
-  .noviello-artigo .hero>*{position:relative;z-index:1}
-  .noviello-artigo .meta-header{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px;font-family:'Poppins',sans-serif;font-size:12px;color:var(--anti-flash);letter-spacing:.8px;margin-bottom:22px}
-  .noviello-artigo .meta-header .chip{display:inline-block;background:transparent;color:var(--anti-flash);border:1px solid var(--anti-flash);padding:3px 12px;border-radius:999px;font-weight:600;text-transform:uppercase;letter-spacing:1px;font-size:11px}
-  .noviello-artigo .meta-header .sep{opacity:.6}
-  .noviello-artigo .hero .eyebrow{font-family:'Poppins',sans-serif;font-size:13px;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:var(--anti-flash);margin-bottom:16px}
-  .noviello-artigo .hero h1{font-family:'Cinzel',serif;font-weight:600;font-size:34px;line-height:1.25;margin:0 0 18px;color:var(--anti-flash)}
-  .noviello-artigo .hero .lead{font-family:'Cormorant Garamond',serif;font-style:italic;font-weight:500;font-size:22px;line-height:1.5;max-width:720px;margin:0 auto;color:var(--anti-flash)}
-  .noviello-artigo .hero .ruler{width:60px;height:2px;background:var(--anti-flash);margin:22px auto}
+  /* ===== Hero sintetico (compacto, sobre branco) ===== */
+  .noviello-artigo .hero-sint{padding:46px 90px 0}
+  .noviello-artigo .hero-sint .kicker{display:flex;align-items:center;gap:12px;font-family:'Poppins',sans-serif;font-weight:600;font-size:13px;letter-spacing:3px;text-transform:uppercase;color:var(--claret);margin:0 0 18px}
+  .noviello-artigo .hero-sint .kicker .mark{width:8px;height:8px;background:var(--claret);transform:rotate(45deg);flex-shrink:0}
+  .noviello-artigo .hero-sint .lead{font-family:'Cormorant Garamond',serif;font-style:italic;font-weight:500;font-size:25px;line-height:1.45;color:var(--ink);margin:0 0 18px;max-width:880px}
+  .noviello-artigo .hero-sint .lead:empty{display:none}
+  .noviello-artigo .hero-sint .meta{font-family:'Poppins',sans-serif;font-size:13px;color:var(--ink-soft);letter-spacing:.5px;padding-bottom:26px;border-bottom:1px solid var(--claret-line)}
 
   /* ===== Corpo ===== */
-  .noviello-artigo .corpo{padding:56px 90px}
+  .noviello-artigo .corpo{padding:40px 90px 56px}
 
   /* ===== Sumario ===== */
   .noviello-artigo .toc{background:var(--claret-tint);border-left:4px solid var(--claret);padding:22px 28px;margin:0 0 40px;border-radius:0 4px 4px 0}
@@ -188,17 +180,10 @@
 </head>
 <body>
 <div class="noviello-artigo">
-  <header class="hero {hero_class}" {hero_style}>
-    <div class="meta-header">
-      {categoria_chip}
-      <span class="data">{data_publicacao}</span>
-      <span class="sep">·</span>
-      <span class="tempo-leitura">{tempo_leitura} min de leitura</span>
-    </div>
-    <div class="eyebrow">{eyebrow}</div>
-    <h1>{titulo}</h1>
-    <div class="ruler"></div>
+  <header class="hero-sint">
+    <div class="kicker"><span class="mark"></span>{eyebrow}</div>
     <p class="lead">{lead}</p>
+    <div class="meta">{data_publicacao} · {tempo_leitura} min de leitura</div>
   </header>
   <div class="corpo">
     {toc}

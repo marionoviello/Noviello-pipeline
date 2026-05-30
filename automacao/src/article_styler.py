@@ -27,6 +27,42 @@ from pathlib import Path
 
 TEMPLATE = "artigo-noviello.html"
 
+
+def limpar_html_legado(html: str) -> str:
+    """Extrai conteudo semantico limpo de HTML legado (Gutenberg, Classic, sujo).
+
+    Remove comentarios (wp: blocks), atributos style/class/id/data-*, desempacota
+    div/span (mantendo o conteudo), tira tags vazias e normaliza espacos.
+    Preserva h1-h6, p, ul/ol/li, table/thead/tbody/tr/td/th, strong/em, a, blockquote,
+    figure/img (imagens do corpo sao mantidas). Pronto para passar pelo estilizar().
+    """
+    h = html or ""
+    # 0. blocos nao-conteudo e moldura de template antigo (style/script + hero/cta/bio)
+    h = re.sub(r"<style[^>]*>.*?</style>", "", h, flags=re.DOTALL | re.IGNORECASE)
+    h = re.sub(r"<script[^>]*>.*?</script>", "", h, flags=re.DOTALL | re.IGNORECASE)
+    h = re.sub(r"<header[^>]*>.*?</header>", "", h, flags=re.DOTALL | re.IGNORECASE)
+    h = re.sub(r"<aside[^>]*>.*?</aside>", "", h, flags=re.DOTALL | re.IGNORECASE)
+    # 1. comentarios HTML (inclui <!-- wp:... -->)
+    h = re.sub(r"<!--.*?-->", "", h, flags=re.DOTALL)
+    # 1b. emojis / icones clichê (o padrao Noviello nao usa nenhum)
+    h = re.sub("[\U0001F000-\U0001FAFF☀-➿⚐-⚗⚔⚱]", "", h)
+    # 2. atributos de estilo/classe/ids/acessibilidade (mantem href/src/alt/colspan/rowspan)
+    h = re.sub(r'\s+style=("[^"]*"|\'[^\']*\')', "", h, flags=re.IGNORECASE)
+    h = re.sub(r'\s+class=("[^"]*"|\'[^\']*\')', "", h, flags=re.IGNORECASE)
+    h = re.sub(r'\s+(?:id|role|width|height|align|valign|bgcolor)=("[^"]*"|\'[^\']*\')',
+               "", h, flags=re.IGNORECASE)
+    h = re.sub(r'\s+(?:data|aria)-[\w-]+=("[^"]*"|\'[^\']*\')', "", h, flags=re.IGNORECASE)
+    # 3. desempacota div/span (mantem o conteudo interno)
+    h = re.sub(r"</?(?:div|span)\s*>", "", h, flags=re.IGNORECASE)
+    h = re.sub(r"<(?:div|span)[^>]*>", "", h, flags=re.IGNORECASE)
+    # 4. tags vazias / lixo
+    h = re.sub(r"<sup>\s*</sup>", "", h, flags=re.IGNORECASE)
+    h = re.sub(r"<(p|h[1-6]|li|strong|em|blockquote)>\s*</\1>", "", h, flags=re.IGNORECASE)
+    # 5. normaliza espacos (sem colar palavras)
+    h = re.sub(r"[ \t]+", " ", h)
+    h = re.sub(r"\n\s*\n\s*\n+", "\n\n", h)
+    return h.strip()
+
 # Padroes que disparam callouts (caso-insensitivo, comeco do texto do paragrafo)
 _CALLOUT_PADROES = [
     (re.compile(r"^\s*<strong>\s*(saiba\s+que|nota\s+juridica|fundamento\s+legal|base\s+legal)\s*[:.\-—]?\s*</strong>", re.I),
@@ -107,18 +143,33 @@ def _strip_h1_titulo(html: str, titulo: str) -> str:
 
 
 def _extrair_lead(html: str) -> tuple[str, str]:
-    """Pega o 1o paragrafo como lead, devolve (lead_texto_puro, html)."""
+    """Pega o 1o paragrafo como lead e o REMOVE do corpo (evita duplicar no hero).
+
+    So promove a lead se o paragrafo tiver 60-320 chars (tamanho de dek). Fora
+    disso, mantem no corpo e o hero fica sem lead.
+    """
     m = re.search(r"<p[^>]*>(.*?)</p>", html, flags=re.DOTALL | re.IGNORECASE)
     if not m:
         return "", html
-    lead_html = m.group(1)
-    lead_puro = re.sub(r"<[^>]+>", "", lead_html).strip()
+    lead_puro = re.sub(r"<[^>]+>", "", m.group(1)).strip()
     lead_puro = re.sub(r"\s+", " ", lead_puro)
-    if len(lead_puro) < 60:
+    if len(lead_puro) < 60 or len(lead_puro) > 550:
         return "", html
-    if len(lead_puro) > 240:
-        lead_puro = lead_puro[:220].rsplit(" ", 1)[0] + "…"
-    return lead_puro, html
+    html_sem = (html[:m.start()] + html[m.end():]).lstrip()
+    return lead_puro, html_sem
+
+
+def _remover_indice_textual(html: str) -> str:
+    """Remove 'indice' textual embutido (ex: 'Neste artigo voce vai ler' + lista),
+    que duplicaria o sumario (TOC) gerado automaticamente."""
+    padrao = re.compile(
+        r"(?:<(?:p|h[1-6])[^>]*>\s*)?(?:<strong>\s*)?"
+        r"[^<>]{0,30}?neste artigo[^<>]{0,60}?(?:ler|ver|encontrar|aprender)[^<>]{0,12}?:?\s*"
+        r"(?:</strong>\s*)?(?:</(?:p|h[1-6])>\s*)?\s*"
+        r"<(ol|ul)\b[^>]*>.*?</\1>",
+        re.IGNORECASE | re.DOTALL,
+    )
+    return padrao.sub("", html, count=1)
 
 
 def _gerar_meta_description(lead: str, conteudo: str) -> str:
@@ -446,11 +497,12 @@ def estilizar(
 
     # Limpeza inicial
     conteudo = _strip_h1_titulo(conteudo, titulo)
+    conteudo = _remover_indice_textual(conteudo)
     conteudo = _classificar_tabelas(conteudo)
 
-    # Lead
+    # Lead (extrai do 1o paragrafo e o remove do corpo, evitando duplicacao)
     if lead is None:
-        lead, _ = _extrair_lead(conteudo)
+        lead, conteudo = _extrair_lead(conteudo)
     lead_final = _html.escape(lead or "")
 
     # Eyebrow (categorias preferem ao titulo)
